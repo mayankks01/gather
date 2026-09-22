@@ -7,7 +7,7 @@ const require = createRequire(
 const { HubConnectionBuilder, LogLevel } = require("@microsoft/signalr");
 const base = process.env.GATHER_TEST_URL || "http://localhost:5080";
 const nonce = Date.now().toString(36);
-let owner, member, outsider, room, channel, sent, invite;
+let owner, member, outsider, room, channel, sent, invite, dmRequest;
 const connections = [];
 async function request(path, { user, method = "GET", body, cookie } = {}) {
   const response = await fetch(base + "/api/v1" + path, {
@@ -215,7 +215,7 @@ test("read marker clears unread counts", async () => {
   const after = await request("/rooms", { user: member });
   assert.equal(after.result.find((r) => r.id === room).unread, 0);
 });
-test("direct conversations are unique per pair", async () => {
+test("DM requests are unique per pair and opposite requests do not auto-accept", async () => {
   const a = await request("/dm/" + member.user.username, {
     user: owner,
     method: "POST",
@@ -226,6 +226,268 @@ test("direct conversations are unique per pair", async () => {
   });
   assert.equal(a.status, 200);
   assert.equal(a.result.channelId, b.result.channelId);
+  assert.equal(a.result.state, "Pending");
+  assert.equal(b.result.state, "Pending");
+  assert.equal(a.result.incoming, false);
+  assert.equal(b.result.incoming, true);
+  dmRequest = a.result;
+  const repeated = await request("/dm/" + member.user.username, {
+    user: owner,
+    method: "POST",
+  });
+  assert.equal(repeated.result.requestId, dmRequest.requestId);
+  assert.equal((await request("/dm", { user: member })).result.length, 0);
+  const incoming = (await request("/dm/requests", { user: member })).result;
+  assert.equal(
+    incoming.filter((r) => r.requestId === dmRequest.requestId).length,
+    1,
+  );
+  assert.equal(incoming[0].incoming, true);
+  assert.ok(
+    !(await request("/dm/requests", { user: outsider })).result.some(
+      (r) => r.requestId === dmRequest.requestId,
+    ),
+  );
+});
+
+test("pending requests deny messages, history, search, pins, uploads and typing", async () => {
+  const id = dmRequest.channelId;
+  for (const user of [owner, member]) {
+    for (const suffix of ["messages", "messages/search", "pins"])
+      assert.equal(
+        (await request(`/channels/${id}/${suffix}`, { user })).status,
+        403,
+      );
+  }
+  for (const hub of [connections[0], connections[1]]) {
+    await assert.rejects(() => hub.invoke("SubscribeChannel", id));
+    await assert.rejects(() => hub.invoke("StartTyping", id));
+    await assert.rejects(() =>
+      hub.invoke("SendMessage", {
+        channelId: id,
+        content: "Not accepted",
+        clientMessageId: crypto.randomUUID(),
+        attachmentIds: [],
+      }),
+    );
+  }
+  const form = new FormData();
+  form.append(
+    "file",
+    new Blob(["placeholder"], { type: "image/png" }),
+    "image.png",
+  );
+  assert.equal(
+    (
+      await fetch(base + `/api/v1/media/${id}`, {
+        method: "POST",
+        headers: { Authorization: "Bearer " + owner.accessToken },
+        body: form,
+      })
+    ).status,
+    403,
+  );
+});
+
+test("only the recipient can accept; accepted requests unlock real-time chat", async () => {
+  const path = `/dm/requests/${dmRequest.requestId}`;
+  assert.equal(
+    (await request(path + "/accept", { user: owner, method: "POST" })).status,
+    403,
+  );
+  assert.equal(
+    (await request(path + "/accept", { user: outsider, method: "POST" }))
+      .status,
+    403,
+  );
+  assert.equal(
+    (await request(path + "/cancel", { user: member, method: "POST" })).status,
+    403,
+  );
+  const notification = new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("Request notification timed out")),
+      5000,
+    );
+    const handler = () => {
+      clearTimeout(timeout);
+      connections[0].off("DirectRequestsChanged", handler);
+      resolve(true);
+    };
+    connections[0].on("DirectRequestsChanged", handler);
+  });
+  const accepted = await request(path + "/accept", {
+    user: member,
+    method: "POST",
+  });
+  assert.equal(accepted.status, 200, JSON.stringify(accepted.result));
+  await notification;
+  assert.equal(
+    (await request(path + "/accept", { user: member, method: "POST" })).status,
+    200,
+  );
+  assert.equal(
+    (await request(path + "/cancel", { user: owner, method: "POST" })).status,
+    409,
+  );
+  assert.ok(
+    (await request("/dm", { user: owner })).result.some(
+      (d) => d.channelId === dmRequest.channelId,
+    ),
+  );
+  assert.ok(
+    !(await request("/dm/requests", { user: member })).result.some(
+      (r) => r.requestId === dmRequest.requestId,
+    ),
+  );
+  const message = await connections[0].invoke("SendMessage", {
+    channelId: dmRequest.channelId,
+    content: "Accepted hello",
+    clientMessageId: crypto.randomUUID(),
+    attachmentIds: [],
+  });
+  assert.equal(message.content, "Accepted hello");
+  assert.equal(
+    (
+      await request(`/channels/${dmRequest.channelId}/messages`, {
+        user: member,
+      })
+    ).result.messages[0].id,
+    message.id,
+  );
+});
+
+test("decline, cancellation and stale requests cannot bypass recipient approval", async () => {
+  const first = (
+    await request("/dm/" + outsider.user.username, {
+      user: owner,
+      method: "POST",
+    })
+  ).result;
+  assert.equal(
+    (
+      await request(`/dm/requests/${first.requestId}/decline`, {
+        user: owner,
+        method: "POST",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(`/dm/requests/${first.requestId}/decline`, {
+        user: outsider,
+        method: "POST",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await request("/dm/" + outsider.user.username, {
+        user: owner,
+        method: "POST",
+      })
+    ).status,
+    409,
+  );
+  const reversed = (
+    await request("/dm/" + owner.user.username, {
+      user: outsider,
+      method: "POST",
+    })
+  ).result;
+  assert.equal(reversed.channelId, first.channelId);
+  assert.notEqual(reversed.requestId, first.requestId);
+  assert.equal(reversed.state, "Pending");
+  assert.equal(
+    (
+      await request(`/dm/requests/${first.requestId}/accept`, {
+        user: outsider,
+        method: "POST",
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await request(`/dm/requests/${reversed.requestId}/cancel`, {
+        user: outsider,
+        method: "POST",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await request(`/dm/requests/${reversed.requestId}/accept`, {
+        user: owner,
+        method: "POST",
+      })
+    ).status,
+    409,
+  );
+  assert.equal(
+    (
+      await request("/dm/" + owner.user.username, {
+        user: outsider,
+        method: "POST",
+      })
+    ).status,
+    409,
+  );
+});
+
+test("blocking closes pending requests and unblocking does not accept them", async () => {
+  const pending = (
+    await request("/dm/" + outsider.user.username, {
+      user: owner,
+      method: "POST",
+    })
+  ).result;
+  assert.equal(pending.state, "Pending");
+  await request("/blocks/" + owner.user.id, { user: outsider, method: "POST" });
+  assert.equal(
+    (
+      await request(`/dm/requests/${pending.requestId}/accept`, {
+        user: outsider,
+        method: "POST",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request("/dm/" + outsider.user.username, {
+        user: owner,
+        method: "POST",
+      })
+    ).status,
+    403,
+  );
+  assert.ok(
+    !(await request("/dm/requests", { user: owner })).result.some(
+      (r) => r.channelId === pending.channelId,
+    ),
+  );
+  await request("/blocks/" + owner.user.id, {
+    user: outsider,
+    method: "DELETE",
+  });
+  assert.equal(
+    (
+      await request(`/dm/requests/${pending.requestId}/accept`, {
+        user: outsider,
+        method: "POST",
+      })
+    ).status,
+    409,
+  );
+  assert.equal(
+    (await request(`/channels/${pending.channelId}/messages`, { user: owner }))
+      .status,
+    403,
+  );
 });
 test("blocking prevents DM sends and history access", async () => {
   const d = await request("/dm/" + member.user.username, {

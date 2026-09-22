@@ -24,7 +24,8 @@ import {
 import { api, restoreSession, setToken, token } from "./lib/api";
 import { refreshPicture } from "./lib/pictures";
 import { Picture } from "./components/Pictures";
-import type { Direct, Message, Room, User } from "./lib/types";
+import type { Direct, DirectRequest, Message, Room, User } from "./lib/types";
+import { DirectRequests } from "./components/DirectRequests";
 import { Avatar, Brand, Empty, Modal } from "./components/Common";
 import { Chat } from "./components/Chat";
 import {
@@ -40,6 +41,8 @@ export default function App() {
     [booting, setBooting] = useState(true),
     [rooms, setRooms] = useState<Room[]>([]),
     [directs, setDirects] = useState<Direct[]>([]),
+    [requests, setRequests] = useState<DirectRequest[]>([]),
+    [requestTab, setRequestTab] = useState<"incoming" | "sent">("incoming"),
     [active, setActive] = useState(""),
     [view, setView] = useState("discover"),
     [modal, setModal] = useState(""),
@@ -72,12 +75,14 @@ export default function App() {
     [],
   );
   const refresh = useCallback(async () => {
-    const [r, d] = await Promise.all([
+    const [r, d, requests] = await Promise.all([
       api<Room[]>("/rooms"),
       api<Direct[]>("/dm"),
+      api<DirectRequest[]>("/dm/requests"),
     ]);
     setRooms(r);
     setDirects(d);
+    setRequests(requests);
   }, []);
   const open = (channel: string) => {
     setActive(channel);
@@ -89,6 +94,25 @@ export default function App() {
       .then(() => open(channel))
       .catch(errorHandler);
   };
+  async function startDirect(user: User) {
+    const result = await api<Omit<DirectRequest, "createdAt">>(
+      "/dm/" + encodeURIComponent(user.username),
+      "POST",
+    );
+    await refresh();
+    if (result.state === "Accepted") open(result.channelId);
+    else {
+      setRequestTab(result.incoming ? "incoming" : "sent");
+      setView("inbox");
+      setActive("");
+      setNavOpen(false);
+      setError(
+        result.incoming
+          ? "This person already requested to chat. Review their request below."
+          : "Request sent. You can chat once they accept.",
+      );
+    }
+  }
   useEffect(() => {
     if (new URLSearchParams(location.search).has("action")) {
       setBooting(false);
@@ -139,6 +163,7 @@ export default function App() {
             setConnected(true);
             setReconnect((n) => n + 1);
             refreshPicture();
+            void refresh().catch(() => {});
           }
         })
         .catch(() => {
@@ -151,6 +176,10 @@ export default function App() {
         setError(`New message from ${message.sender.displayName}`);
     });
     connection.on("UnreadUpdated", () => void refresh().catch(() => {}));
+    connection.on(
+      "DirectRequestsChanged",
+      () => void refresh().catch(() => {}),
+    );
     connection.on("PictureChanged", (event: { path: string }) =>
       refreshPicture(event.path),
     );
@@ -285,7 +314,8 @@ export default function App() {
           onClick={() => navTo("inbox")}
         >
           <MessageCircle size={23} />
-          {directs.some((d) => d.unread > 0) && <i className="unread-dot" />}
+          {(directs.some((d) => d.unread > 0) ||
+            requests.some((r) => r.incoming)) && <i className="unread-dot" />}
         </button>
         {rooms.map((r) => (
           <button
@@ -365,6 +395,11 @@ export default function App() {
           >
             <MessageCircle size={18} />
             Direct messages
+            {requests.some((r) => r.incoming) && (
+              <span className="badge" aria-label="Incoming message requests">
+                {requests.filter((r) => r.incoming).length}
+              </span>
+            )}
           </button>
         </nav>
         <div className="section-label">
@@ -520,7 +555,7 @@ export default function App() {
                 onClick={() => setModal(view === "inbox" ? "dm" : "create")}
               >
                 <Plus size={16} />
-                {view === "inbox" ? "New message" : "Create room"}
+                {view === "inbox" ? "New request" : "Create room"}
               </button>
             )}
           </div>
@@ -652,39 +687,52 @@ export default function App() {
               </p>
             </div>
             {view === "inbox" ? (
-              directs.length ? (
-                <div className="direct-grid">
-                  {directs.map((d) => (
-                    <button
-                      className="direct-card"
-                      key={d.channelId}
-                      onClick={() => open(d.channelId)}
-                    >
-                      <Avatar user={d.user} />
-                      <div>
-                        <h3>{d.user.displayName}</h3>
-                        <p>@{d.user.username}</p>
-                      </div>
-                      {d.unread > 0 ? (
-                        <span className="badge">{d.unread}</span>
-                      ) : (
-                        <ArrowUpRight size={20} />
-                      )}
+              <>
+                <DirectRequests
+                  requests={requests}
+                  tab={requestTab}
+                  setTab={setRequestTab}
+                  onChanged={refresh}
+                  onOpen={open}
+                  onError={errorHandler}
+                />
+                {directs.length ? (
+                  <div className="direct-grid">
+                    {directs.map((d) => (
+                      <button
+                        className="direct-card"
+                        key={d.channelId}
+                        onClick={() => open(d.channelId)}
+                      >
+                        <Avatar user={d.user} />
+                        <div>
+                          <h3>{d.user.displayName}</h3>
+                          <p>@{d.user.username}</p>
+                        </div>
+                        {d.unread > 0 ? (
+                          <span className="badge">{d.unread}</span>
+                        ) : (
+                          <ArrowUpRight size={20} />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <Empty
+                    icon={<MessageCircle size={32} />}
+                    title="Good conversations start small."
+                  >
+                    <p>
+                      Send a request to connect. Accepted conversations appear
+                      here.
+                    </p>
+                    <button className="primary" onClick={() => setModal("dm")}>
+                      Find your people
+                      <ArrowUpRight size={17} />
                     </button>
-                  ))}
-                </div>
-              ) : (
-                <Empty
-                  icon={<MessageCircle size={32} />}
-                  title="Good conversations start small."
-                >
-                  <p>Search for a username to send your first message.</p>
-                  <button className="primary" onClick={() => setModal("dm")}>
-                    Find your people
-                    <ArrowUpRight size={17} />
-                  </button>
-                </Empty>
-              )
+                  </Empty>
+                )}
+              </>
             ) : (
               <>
                 <div className="discover-toolbar">
@@ -820,7 +868,7 @@ export default function App() {
           me={me}
           onClose={() => setModal("")}
           onError={errorHandler}
-          onOpen={refreshAndOpen}
+          onStart={startDirect}
         />
       )}
       {modal === "join" && (
@@ -863,19 +911,17 @@ export default function App() {
                 className="primary full"
                 onClick={async () => {
                   try {
-                    const d = await api<{ channelId: string }>(
-                      "/dm/" + profile.username,
-                      "POST",
-                    );
+                    await startDirect(profile);
                     setProfile(null);
-                    refreshAndOpen(d.channelId);
                   } catch (error) {
                     errorHandler(error);
                   }
                 }}
               >
                 <MessageCircle size={17} />
-                Message
+                {directs.some((d) => d.user.id === profile.id)
+                  ? "Open conversation"
+                  : "Send message request"}
               </button>
               <button
                 className="danger full"

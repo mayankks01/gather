@@ -71,6 +71,7 @@ app.MapGet("/api/v1/health", () => Results.Ok(new { status = "ok" }));
 app.MapAuth(); app.MapRooms(); app.MapConversations(); app.MapMedia();
 app.MapMessageTools();
 app.MapPictures();
+app.MapDirectRequests();
 app.MapHub<ChatHub>("/hubs/chat", o => o.CloseOnAuthenticationExpiration = true);
 app.Run();
 public partial class Program { }

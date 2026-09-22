@@ -26,6 +26,14 @@ export type Direct = {
   unread: number;
   blocked: boolean;
 };
+export type DirectRequest = {
+  requestId: string;
+  channelId: string;
+  state: "Pending" | "Accepted" | "Declined" | "Cancelled";
+  incoming: boolean;
+  createdAt: number;
+  user: User;
+};
 export type Attachment = {
   id: string;
   fileName: string;

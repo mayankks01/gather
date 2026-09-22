@@ -97,10 +97,11 @@ export function NewMessage({
   me,
   onClose,
   onError,
-  onOpen,
-}: Shared & { me: User; onOpen: (channel: string) => void }) {
+  onStart,
+}: Shared & { me: User; onStart: (user: User) => Promise<void> }) {
   const [query, setQuery] = useState(""),
     [results, setResults] = useState<User[]>([]),
+    [sending, setSending] = useState(false),
     [loading, setLoading] = useState(false);
   useEffect(() => {
     if (query.length < 3) {
@@ -127,8 +128,11 @@ export function NewMessage({
     };
   }, [query]);
   return (
-    <Modal title="Start a conversation." onClose={onClose}>
-      <p className="modal-description">Find someone by their username.</p>
+    <Modal title="Send a message request." onClose={onClose}>
+      <p className="modal-description">
+        Find someone by username and send a request. You can chat once they
+        accept.
+      </p>
       <div className="search-field">
         <Search size={18} />
         <input
@@ -150,16 +154,16 @@ export function NewMessage({
               <button
                 className="person-row"
                 key={u.id}
+                disabled={sending}
                 onClick={async () => {
+                  setSending(true);
                   try {
-                    const d = await api<{ channelId: string }>(
-                      "/dm/" + u.username,
-                      "POST",
-                    );
-                    onOpen(d.channelId);
+                    await onStart(u);
                     onClose();
                   } catch (error) {
                     onError(error);
+                  } finally {
+                    setSending(false);
                   }
                 }}
               >
@@ -169,6 +173,9 @@ export function NewMessage({
                   <small>@{u.username}</small>
                 </div>
                 <UserPlus size={18} />
+                <span className="request-label">
+                  {sending ? "Sending…" : "Request"}
+                </span>
               </button>
             ))
         ) : (

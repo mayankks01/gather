@@ -15,6 +15,77 @@
   --hover: #f0edf6;
   --danger: #b34160;
 }
+.dm-requests {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px;
+  margin-bottom: 28px;
+  background: var(--bg);
+}
+.dm-requests > h3 {
+  margin-bottom: 8px;
+  font-size: 17px;
+}
+.dm-requests > p {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.dm-requests .tabs {
+  margin-top: 15px;
+}
+.request-empty {
+  padding: 12px 0;
+  color: var(--muted);
+}
+.request-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 0;
+  border-top: 1px solid var(--line);
+}
+.request-person {
+  flex: 1;
+  min-width: 0;
+}
+.request-person strong,
+.request-person small,
+.request-person > span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.request-person small,
+.request-person > span {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.request-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.request-actions button {
+  padding: 8px 12px;
+  font-size: 12px;
+}
+.request-label {
+  font-size: 11px;
+  color: var(--accent);
+}
+@media (max-width: 650px) {
+  .dm-requests {
+    padding: 14px;
+  }
+  .request-card {
+    flex-wrap: wrap;
+  }
+  .request-actions {
+    flex-basis: 100%;
+    padding-left: 44px;
+  }
+}
 .identity-picture {
   display: inline-flex;
   align-items: center;

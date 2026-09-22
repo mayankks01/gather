@@ -4,7 +4,7 @@ Validated locally on Windows with .NET 10 and Node.js 22.
 
 - Backend: `dotnet build backend/Gather.Api --no-restore` succeeds.
 - Frontend: `npm run build` succeeds, including strict TypeScript checking. The initial production JavaScript bundle is approximately 126 KB gzip; the PRD’s 250 KB proposal is met by the current build output, excluding externally loaded fonts and user media.
-- Integration suite: `node --test tests/api.test.mjs` passes 24 checks against an isolated SQLite database on port 5081.
+- Integration suite: `node --test tests/api.test.mjs` passes 28 checks against an isolated SQLite database on port 5081.
 - Browser: signed in using a test account, created a private room, and sent a message through the UI. Inspected the chat at 360×800 and 1440×900. The composer, navigation, and message content fit without visible overlap.
 - Authentication and chat are backed by the running .NET service; no sample-data mode is used.
 
@@ -25,3 +25,10 @@ Not verified: Docker/PostgreSQL/Redis execution (Docker Desktop’s engine was u
 - All 24 integration tests pass against an isolated database. New checks verify authenticated avatar reads, live notifications, upload/replacement/removal, 256×256 WebP output, block privacy, invalid or mismatched formats, 5 MB limit, private room icon access and owner/admin management.
 - Upgraded a copy of the existing database and verified every original row in users, rooms, messages, memberships, attachments, replies, reactions and pins against its pre-upgrade backup.
 - Browser: signed into an isolated test account and verified saved avatars and room icons in profile settings, room navigation and public discovery. Mobile picture-editor behavior and the native file-picker workflow still require broader browser coverage.
+
+## DM requests — 22 September 2026
+
+- All 28 integration checks pass. Requests stay pending when both users initiate; only the recipient can accept or decline and only the sender can cancel. Pending requests deny messages, history, search, pins, uploads, subscriptions and typing. Acceptance delivers a live event and unlocks chat. Tests also cover stale request IDs, retry cooldowns, decline/cancel behavior and blocking/unblocking without automatic acceptance.
+- The upgrade was applied to a consistent copy of the existing database. Every original row in users, rooms, channels, messages, memberships, attachments, replies, reactions, pins and pictures was preserved. All three existing direct channels remain accepted; the backup and version marker were verified.
+- Browser: the isolated recipient account displayed its incoming request and Accept/Decline/Block controls. The accepted conversation subsequently displayed its message composer. Backend and frontend builds pass; a wider browser/device matrix and concurrent multi-node load testing remain outstanding.
+- The live local database was upgraded with its automatic backup. Original records and all three existing DMs were preserved. The API health endpoint and frontend proxy both return healthy responses on ports 5080 and 5173.

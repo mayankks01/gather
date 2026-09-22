@@ -123,4 +123,13 @@ public sealed class SchemaVersion
     public long AppliedAt { get; set; } = Clock.Now;
 }
 public sealed class UserPicture { public string UserId { get; set; } = ""; public byte[] Data { get; set; } = []; }
+public sealed class DmRequest
+{
+    public string ChannelId { get; set; } = "";
+    public string RequestId { get; set; } = Guid.NewGuid().ToString();
+    public string RequesterId { get; set; } = "";
+    public string State { get; set; } = "Pending";
+    public long CreatedAt { get; set; } = Clock.Now;
+    public long UpdatedAt { get; set; } = Clock.Now;
+}
 public sealed class RoomPicture { public string RoomId { get; set; } = ""; public byte[] Data { get; set; } = []; }

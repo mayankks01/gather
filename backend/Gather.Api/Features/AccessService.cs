@@ -17,6 +17,7 @@ public sealed class AccessService(GatherDb db)
         else
         {
             Contracts.Require(channel.UserLow == userId || channel.UserHigh == userId, "Conversation not found.", 403);
+            Contracts.Require(await db.DmRequests.AnyAsync(r => r.ChannelId == id && r.State == "Accepted"), "This message request must be accepted before you can chat.", 403);
             Contracts.Require(!await db.Blocks.AnyAsync(b => (b.UserId == channel.UserLow && b.TargetId == channel.UserHigh) || (b.UserId == channel.UserHigh && b.TargetId == channel.UserLow)), "This conversation is unavailable.", 403);
         }
         return channel;
