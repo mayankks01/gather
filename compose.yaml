@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: gather
+      POSTGRES_USER: gather
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gather -d gather"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  api:
+    build:
+      context: .
+      dockerfile: backend/Gather.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Jwt__Key: ${JWT_KEY:?Set JWT_KEY in .env}
+      Database__Provider: Postgres
+      ConnectionStrings__Gather: Host=postgres;Database=gather;Username=gather;Password=${POSTGRES_PASSWORD}
+      ConnectionStrings__Redis: redis:6379
+      App__PublicUrl: http://localhost:5173
+    volumes: ["app-data:/app/App_Data"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports: ["127.0.0.1:5173:80"]
+    depends_on: [api]
+volumes:
+  postgres-data:
+  app-data:
