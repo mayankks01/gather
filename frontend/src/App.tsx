@@ -41,6 +41,8 @@ export default function App() {
     [booting, setBooting] = useState(true),
     [rooms, setRooms] = useState<Room[]>([]),
     [directs, setDirects] = useState<Direct[]>([]),
+    [blockedUsers, setBlockedUsers] = useState<User[]>([]),
+    [blockBusy, setBlockBusy] = useState(false),
     [requests, setRequests] = useState<DirectRequest[]>([]),
     [requestTab, setRequestTab] = useState<"incoming" | "sent">("incoming"),
     [active, setActive] = useState(""),
@@ -75,15 +77,18 @@ export default function App() {
     [],
   );
   const refresh = useCallback(async () => {
-    const [r, d, requests] = await Promise.all([
+    const [r, d, requests, blocks] = await Promise.all([
       api<Room[]>("/rooms"),
       api<Direct[]>("/dm"),
       api<DirectRequest[]>("/dm/requests"),
+      api<User[]>("/blocks"),
     ]);
     setRooms(r);
     setDirects(d);
     setRequests(requests);
+    setBlockedUsers(blocks);
   }, []);
+  const profileBlocked = blockedUsers.some((user) => user.id === profile?.id);
   const open = (channel: string) => {
     setActive(channel);
     setView("chat");
@@ -925,24 +930,44 @@ export default function App() {
               </button>
               <button
                 className="danger full"
+                disabled={blockBusy}
                 onClick={async () => {
                   if (
-                    confirm(
+                    !profileBlocked &&
+                    !confirm(
                       "Block " +
                         profile.displayName +
                         "? They will not be able to DM you.",
                     )
                   )
-                    try {
-                      await api("/blocks/" + profile.id, "POST");
-                      setProfile(null);
-                      await refresh();
-                    } catch (error) {
-                      errorHandler(error);
-                    }
+                    return;
+                  setBlockBusy(true);
+                  try {
+                    await api(
+                      "/blocks/" + profile.id,
+                      profileBlocked ? "DELETE" : "POST",
+                    );
+                    setBlockedUsers((users) =>
+                      profileBlocked
+                        ? users.filter((user) => user.id !== profile.id)
+                        : [
+                            ...users.filter((user) => user.id !== profile.id),
+                            profile,
+                          ],
+                    );
+                    await refresh();
+                  } catch (error) {
+                    errorHandler(error);
+                  } finally {
+                    setBlockBusy(false);
+                  }
                 }}
               >
-                Block user
+                {blockBusy
+                  ? "Updating…"
+                  : profileBlocked
+                    ? "Unblock user"
+                    : "Block user"}
               </button>
             </>
           )}
