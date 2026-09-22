@@ -122,3 +122,5 @@ public sealed class SchemaVersion
     public string Version { get; set; } = "";
     public long AppliedAt { get; set; } = Clock.Now;
 }
+public sealed class UserPicture { public string UserId { get; set; } = ""; public byte[] Data { get; set; } = []; }
+public sealed class RoomPicture { public string RoomId { get; set; } = ""; public byte[] Data { get; set; } = []; }

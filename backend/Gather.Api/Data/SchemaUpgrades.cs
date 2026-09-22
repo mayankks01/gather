@@ -10,6 +10,31 @@ public static class SchemaUpgrades
 {
     public static async Task Apply(GatherDb db)
     {
+        await ChatTools(db);
+        await Pictures(db);
+    }
+    private static async Task Pictures(GatherDb db)
+    {
+        const string version = "20260922-pictures";
+        if (await db.SchemaVersions.AnyAsync(x => x.Version == version)) return;
+        if (db.Database.GetDbConnection() is SqliteConnection source && File.Exists(source.DataSource))
+        {
+            var backups = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(source.DataSource))!, "backups");
+            Directory.CreateDirectory(backups);
+            await source.OpenAsync();
+            await using var backup = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(backups, $"before-pictures-{DateTime.UtcNow:yyyyMMddHHmmssfff}.db") }.ToString());
+            await backup.OpenAsync(); source.BackupDatabase(backup); await source.CloseAsync();
+        }
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var dataType = db.Database.IsSqlite() ? "BLOB" : "BYTEA";
+        var sql = "CREATE TABLE IF NOT EXISTS \"UserPictures\" (\"UserId\" TEXT NOT NULL PRIMARY KEY REFERENCES \"Users\" (\"Id\") ON DELETE CASCADE, \"Data\" " + dataType + " NOT NULL); "
+            + "CREATE TABLE IF NOT EXISTS \"RoomPictures\" (\"RoomId\" TEXT NOT NULL PRIMARY KEY REFERENCES \"Rooms\" (\"Id\") ON DELETE CASCADE, \"Data\" " + dataType + " NOT NULL);";
+        await db.Database.ExecuteSqlRawAsync(sql);
+        db.SchemaVersions.Add(new SchemaVersion { Version = version });
+        await db.SaveChangesAsync(); await transaction.CommitAsync();
+    }
+    private static async Task ChatTools(GatherDb db)
+    {
         await db.Database.EnsureCreatedAsync();
         await db.Database.ExecuteSqlRawAsync("""
             CREATE TABLE IF NOT EXISTS "SchemaVersions" (

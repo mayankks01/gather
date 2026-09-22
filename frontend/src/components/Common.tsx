@@ -1,12 +1,13 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 import type { User } from "../lib/types";
+import { Picture } from "./Pictures";
 export function Avatar({
   user,
   size = "",
   online = false,
 }: {
-  user: Pick<User, "displayName">;
+  user: Pick<User, "displayName"> & Partial<Pick<User, "id">>;
   size?: string;
   online?: boolean;
 }) {
@@ -19,12 +20,15 @@ export function Avatar({
           colors[(user.displayName.charCodeAt(0) || 0) % colors.length],
       }}
     >
-      {user.displayName
-        .split(" ")
-        .map((x) => x[0])
-        .slice(0, 2)
-        .join("")
-        .toUpperCase()}
+      <Picture
+        path={user.id ? `/users/${user.id}/avatar` : undefined}
+        fallback={user.displayName
+          .split(" ")
+          .map((x) => x[0])
+          .slice(0, 2)
+          .join("")
+          .toUpperCase()}
+      />
       {online && <i className="online-dot" />}
     </span>
   );

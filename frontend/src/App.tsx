@@ -22,6 +22,8 @@ import {
   X,
 } from "lucide-react";
 import { api, restoreSession, setToken, token } from "./lib/api";
+import { refreshPicture } from "./lib/pictures";
+import { Picture } from "./components/Pictures";
 import type { Direct, Message, Room, User } from "./lib/types";
 import { Avatar, Brand, Empty, Modal } from "./components/Common";
 import { Chat } from "./components/Chat";
@@ -106,6 +108,7 @@ export default function App() {
   }, [dark]);
   useEffect(() => {
     if (!me) return;
+    refreshPicture();
     void refresh().catch(errorHandler);
     if (new URLSearchParams(location.search).get("invite")) setModal("join");
     let disposed = false;
@@ -135,6 +138,7 @@ export default function App() {
           if (!disposed) {
             setConnected(true);
             setReconnect((n) => n + 1);
+            refreshPicture();
           }
         })
         .catch(() => {
@@ -147,6 +151,9 @@ export default function App() {
         setError(`New message from ${message.sender.displayName}`);
     });
     connection.on("UnreadUpdated", () => void refresh().catch(() => {}));
+    connection.on("PictureChanged", (event: { path: string }) =>
+      refreshPicture(event.path),
+    );
     connection.on("MessageUpdated", (message: Message) => {
       if (message.deleted) void refresh().catch(() => {});
     });
@@ -155,6 +162,7 @@ export default function App() {
     connection.onreconnected(() => {
       setConnected(true);
       setReconnect((n) => n + 1);
+      refreshPicture();
       void refresh().catch(() => {});
     });
     connection.onclose(() => {
@@ -290,11 +298,14 @@ export default function App() {
             title={r.name}
             onClick={() => open(r.channelId)}
           >
-            {r.name
-              .split(" ")
-              .map((s) => s[0])
-              .slice(0, 2)
-              .join("")}
+            <Picture
+              path={`/rooms/${r.id}/icon`}
+              fallback={r.name
+                .split(" ")
+                .map((s) => s[0])
+                .slice(0, 2)
+                .join("")}
+            />
             {r.unread > 0 && <i className="unread-dot" />}
           </button>
         ))}
@@ -710,7 +721,11 @@ export default function App() {
                             { "--room-color": r.color } as React.CSSProperties
                           }
                         >
-                          <Hash size={44} />
+                          <Picture
+                            className="discovery-icon"
+                            path={`/rooms/${r.id}/icon`}
+                            fallback={<Hash size={44} />}
+                          />
                           <span>
                             {r.memberCount}{" "}
                             {r.memberCount === 1 ? "member" : "members"}

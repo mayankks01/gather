@@ -20,6 +20,8 @@ public sealed class GatherDb(DbContextOptions<GatherDb> options) : DbContext(opt
     public DbSet<MessageReaction> Reactions => Set<MessageReaction>();
     public DbSet<MessagePin> Pins => Set<MessagePin>();
     public DbSet<SchemaVersion> SchemaVersions => Set<SchemaVersion>();
+    public DbSet<UserPicture> UserPictures => Set<UserPicture>();
+    public DbSet<RoomPicture> RoomPictures => Set<RoomPicture>();
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.Entity<User>().HasIndex(x => x.Username).IsUnique();
@@ -55,5 +57,9 @@ public sealed class GatherDb(DbContextOptions<GatherDb> options) : DbContext(opt
         b.Entity<MessagePin>().HasKey(x => x.MessageId);
         b.Entity<MessagePin>().HasOne<Message>().WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<SchemaVersion>().HasKey(x => x.Version);
+        b.Entity<UserPicture>().HasKey(x => x.UserId);
+        b.Entity<UserPicture>().HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<RoomPicture>().HasKey(x => x.RoomId);
+        b.Entity<RoomPicture>().HasOne<Room>().WithMany().HasForeignKey(x => x.RoomId).OnDelete(DeleteBehavior.Cascade);
     }
 }

@@ -13,6 +13,7 @@ import {
 import { api } from "../lib/api";
 import type { Invite, Room, User } from "../lib/types";
 import { Avatar, Modal } from "./Common";
+import { PictureEditor } from "./Pictures";
 type Shared = { onClose: () => void; onError: (error: unknown) => void };
 export function RoomForm({
   onClose,
@@ -308,6 +309,14 @@ export function RoomSettings({
       </div>
       {tab === "overview" && (
         <>
+          {manage && (
+            <PictureEditor
+              kind="icon"
+              id={room.id}
+              label={room.name}
+              onError={onError}
+            />
+          )}
           <form
             onSubmit={async (e) => {
               e.preventDefault();
@@ -668,6 +677,12 @@ export function UserSettings({
             }
           }}
         >
+          <PictureEditor
+            kind="avatar"
+            id={me.id}
+            label={me.displayName}
+            onError={onError}
+          />
           <label>
             Display name
             <input

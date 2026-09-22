@@ -596,6 +596,179 @@ test("deleted messages do not keep unread badges active", async () => {
   assert.equal(after.result.find((r) => r.id === room).unread, 0);
 });
 
+async function putPicture(
+  path,
+  user,
+  bytes,
+  name = "picture.png",
+  type = "image/png",
+) {
+  const form = new FormData();
+  form.append("file", new Blob([bytes], { type }), name);
+  return fetch(base + "/api/v1" + path, {
+    method: "PUT",
+    headers: { Authorization: "Bearer " + user.accessToken },
+    body: form,
+  });
+}
+async function picture(path, user) {
+  return fetch(base + "/api/v1" + path, {
+    headers: user ? { Authorization: "Bearer " + user.accessToken } : {},
+  });
+}
+function webpDimensions(bytes) {
+  assert.equal(bytes.toString("ascii", 0, 4), "RIFF");
+  assert.equal(bytes.toString("ascii", 8, 12), "WEBP");
+  for (let offset = 12; offset + 8 < bytes.length;) {
+    const type = bytes.toString("ascii", offset, offset + 4),
+      length = bytes.readUInt32LE(offset + 4),
+      data = offset + 8;
+    if (type === "VP8X")
+      return [
+        bytes.readUIntLE(data + 4, 3) + 1,
+        bytes.readUIntLE(data + 7, 3) + 1,
+      ];
+    if (type === "VP8 ")
+      return [
+        bytes.readUInt16LE(data + 6) & 0x3fff,
+        bytes.readUInt16LE(data + 8) & 0x3fff,
+      ];
+    if (type === "VP8L") {
+      const packed = bytes.readUInt32LE(data + 1);
+      return [(packed & 0x3fff) + 1, ((packed >>> 14) & 0x3fff) + 1];
+    }
+    offset = data + length + (length % 2);
+  }
+  throw new Error("No WebP image dimensions");
+}
+
+test("avatars are validated, resized, shared live, replaceable and removable", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const image = await readFile(
+    new URL("./fixtures/image.png", import.meta.url),
+  );
+  const path = `/users/${owner.user.id}/avatar`;
+  assert.equal((await picture(path)).status, 401);
+  assert.equal((await picture(path, owner)).status, 204);
+  const received = new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("Picture change timed out")),
+      5000,
+    );
+    const handler = (event) => {
+      if (event.path === path) {
+        clearTimeout(timeout);
+        connections[1].off("PictureChanged", handler);
+        resolve(event);
+      }
+    };
+    connections[1].on("PictureChanged", handler);
+  });
+  const uploaded = await putPicture("/users/me/avatar", owner, image);
+  assert.equal(uploaded.status, 204, await uploaded.text());
+  assert.equal((await received).path, path);
+  const result = await picture(path, member);
+  assert.equal(result.status, 200);
+  assert.match(result.headers.get("content-type"), /image\/webp/);
+  assert.deepEqual(
+    webpDimensions(Buffer.from(await result.arrayBuffer())),
+    [256, 256],
+  );
+  assert.equal(
+    (await putPicture("/users/me/avatar", owner, image, "second.png")).status,
+    204,
+  );
+  assert.equal(
+    (
+      await putPicture(
+        "/users/me/avatar",
+        member,
+        image,
+        "fake.jpg",
+        "image/jpeg",
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (await putPicture("/users/me/avatar", member, "not an image")).status,
+    400,
+  );
+  assert.equal(
+    (
+      await putPicture(
+        "/users/me/avatar",
+        member,
+        image,
+        "picture.svg",
+        "image/svg+xml",
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await putPicture(
+        "/users/me/avatar",
+        member,
+        new Uint8Array(5 * 1024 * 1024 + 1),
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (await picture(`/users/${member.user.id}/avatar`, member)).status,
+    204,
+  );
+  await request("/blocks/" + owner.user.id, { user: member, method: "POST" });
+  assert.equal((await picture(path, member)).status, 404);
+  await request("/blocks/" + owner.user.id, { user: member, method: "DELETE" });
+  assert.equal(
+    (await request("/users/me/avatar", { user: owner, method: "DELETE" }))
+      .status,
+    204,
+  );
+  assert.equal((await picture(path, owner)).status, 204);
+});
+
+test("room icons enforce private access and owner/admin management", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const image = await readFile(
+    new URL("./fixtures/image.png", import.meta.url),
+  );
+  const path = `/rooms/${room}/icon`;
+  assert.equal((await putPicture(path, member, image)).status, 403);
+  assert.equal((await putPicture(path, outsider, image)).status, 403);
+  assert.equal((await putPicture(path, owner, image)).status, 204);
+  assert.equal((await picture(path, outsider)).status, 403);
+  const visible = await picture(path, member);
+  assert.equal(visible.status, 200);
+  assert.deepEqual(
+    webpDimensions(Buffer.from(await visible.arrayBuffer())),
+    [256, 256],
+  );
+  assert.equal(
+    (await request(path, { user: member, method: "DELETE" })).status,
+    403,
+  );
+  await request(`/rooms/${room}/members/${member.user.id}`, {
+    user: owner,
+    method: "PATCH",
+    body: { role: "Admin" },
+  });
+  assert.equal((await putPicture(path, member, image)).status, 204);
+  assert.equal(
+    (await request(path, { user: member, method: "DELETE" })).status,
+    204,
+  );
+  assert.equal((await picture(path, owner)).status, 204);
+  await request(`/rooms/${room}/members/${member.user.id}`, {
+    user: owner,
+    method: "PATCH",
+    body: { role: "Member" },
+  });
+});
+
 test("ban removes membership and blocks future invites", async () => {
   const r = await request(`/rooms/${room}/invites`, {
     user: owner,

@@ -70,6 +70,7 @@ using (var scope = app.Services.CreateScope()) { var db = scope.ServiceProvider.
 app.MapGet("/api/v1/health", () => Results.Ok(new { status = "ok" }));
 app.MapAuth(); app.MapRooms(); app.MapConversations(); app.MapMedia();
 app.MapMessageTools();
+app.MapPictures();
 app.MapHub<ChatHub>("/hubs/chat", o => o.CloseOnAuthenticationExpiration = true);
 app.Run();
 public partial class Program { }

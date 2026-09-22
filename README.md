@@ -33,10 +33,10 @@ Local uploads and the SQLite database live in ignored `backend/Gather.Api/App_Da
 
 ## What works
 
-- Registration, login, account lockout, profile editing, username rules and 30-day change limit.
+- Registration, login, account lockout, profile editing, avatar upload/removal, username rules and 30-day change limit.
 - Password recovery and email verification using a development mail outbox.
 - JWT access tokens, rotating refresh cookies, refresh reuse detection, logout.
-- Public/private rooms, discovery, membership, an explicit default `general` channel.
+- Public/private rooms, discovery, membership, custom room icons, an explicit default `general` channel.
 - Owner/Admin/Moderator/Member permissions, role changes, ownership transfer, kick, ban/unban, leave, and confirmed deletion.
 - Timed room mutes with automatic expiry, role-hierarchy checks and a muted-composer notice.
 - Expiring and usage-limited invite links, preview, copy, revoke, and acceptance after signing in.
@@ -95,7 +95,7 @@ Optional `ConnectionStrings__Redis` enables the SignalR backplane. Presence trac
 
 `docker compose up --build` provides a local PostgreSQL, Redis, API, and web stack at **http://localhost:5173**. Copy `.env.example` to `.env` and replace the placeholders first. Docker is configured as a development environment; it is not an internet deployment recipe.
 
-Fresh databases use EF Core `EnsureCreated`. Existing installations receive a versioned, additive upgrade for replies, reactions, and pins. Before that upgrade, SQLite creates a consistent backup in `App_Data/backups/` (or `backups/` beside a custom database). Existing conversations are preserved. Back up PostgreSQL separately and apply upgrades from a single process. Adopt reviewed provider-specific migrations for subsequent production changes; do not combine EnsureCreated and EF migrations on an existing database without a migration baseline.
+Fresh databases use EF Core `EnsureCreated`. Existing installations receive a versioned, additive upgrade for replies, reactions, pins, and profile/room pictures. Before each upgrade, SQLite creates a consistent backup in `App_Data/backups/` (or `backups/` beside a custom database). Existing conversations are preserved. Back up PostgreSQL separately and apply upgrades from a single process. Adopt reviewed provider-specific migrations for subsequent production changes; do not combine EnsureCreated and EF migrations on an existing database without a migration baseline.
 
 ## Production configuration and remaining work
 
