@@ -120,6 +120,16 @@ export function Chat({
   onRead: () => void;
   onError: (error: unknown) => void;
 }) {
+  const [mobileComposer, setMobileComposer] = useState(
+    () => window.matchMedia("(hover: none) and (pointer: coarse)").matches,
+  );
+  useEffect(() => {
+    const query = window.matchMedia("(hover: none) and (pointer: coarse)");
+    const update = () => setMobileComposer(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
   const [announcement, setAnnouncement] = useState("");
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [browser, setBrowser] = useState<"search" | "pins" | null>(null);
@@ -821,6 +831,7 @@ export function Chat({
           <textarea
             ref={composerInput}
             aria-label="Message"
+            enterKeyHint={mobileComposer ? "enter" : "send"}
             placeholder={"Message " + name + "…"}
             value={text}
             maxLength={4000}
@@ -834,6 +845,7 @@ export function Chat({
             onKeyDown={(e) => {
               if (
                 e.key === "Enter" &&
+                !mobileComposer &&
                 !e.shiftKey &&
                 !e.nativeEvent.isComposing
               ) {
@@ -878,6 +890,7 @@ export function Chat({
               </span>
             </div>
             <button
+              type="submit"
               className="send-button"
               aria-label="Send message"
               disabled={
@@ -903,8 +916,17 @@ export function Chat({
         />
         <div className="composer-help">
           <span>
-            <strong>Enter</strong> to send · <strong>Shift + Enter</strong> for
-            a new line
+            {mobileComposer ? (
+              <>
+                <strong>Enter</strong> for a new line · Tap{" "}
+                <strong>Send</strong> to send
+              </>
+            ) : (
+              <>
+                <strong>Enter</strong> to send · <strong>Shift + Enter</strong>{" "}
+                for a new line
+              </>
+            )}
           </span>
           <span>
             {text.length ? text.length + "/4000" : "Made for connection ♡"}
