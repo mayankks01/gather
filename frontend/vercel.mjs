@@ -29,35 +29,31 @@ if (
 }
 const backend = origin.origin;
 const socket = backend.replace("https:", "wss:");
+const securityHeaders = {
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "X-Frame-Options": "DENY",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  "Content-Security-Policy": `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ${backend} ${socket}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'`,
+};
+
+const apiRoute = routes.rewrite("/api/(.*)", `${backend}/api/$1`, {
+  requestHeaders: {
+    "x-gather-proxy-secret": deploymentEnv("GATHER_PROXY_SECRET"),
+  },
+  responseHeaders: {
+    ...securityHeaders,
+    "Cache-Control": "private, no-store",
+  },
+});
+
+const spaRoute = routes.rewrite("/(.*)", "/index.html", {
+  responseHeaders: securityHeaders,
+});
 
 export const config = {
   framework: "vite",
   buildCommand: "npm run build",
   outputDirectory: "dist",
-  rewrites: [
-    routes.rewrite("/api/(.*)", `${backend}/api/$1`, {
-      requestHeaders: {
-        "x-gather-proxy-secret": deploymentEnv("GATHER_PROXY_SECRET"),
-      },
-    }),
-    routes.rewrite("/(.*)", "/index.html"),
-  ],
-  headers: [
-    routes.header("/(.*)", [
-        { key: "X-Content-Type-Options", value: "nosniff" },
-        { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-        { key: "X-Frame-Options", value: "DENY" },
-        {
-          key: "Permissions-Policy",
-          value: "camera=(), microphone=(), geolocation=()",
-        },
-        {
-          key: "Content-Security-Policy",
-          value: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ${backend} ${socket}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'`,
-        },
-      ]),
-    routes.header("/api/(.*)", [
-      { key: "Cache-Control", value: "private, no-store" },
-    ]),
-  ],
+  routes: [apiRoute, spaRoute],
 };
