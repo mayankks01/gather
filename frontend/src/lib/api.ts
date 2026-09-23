@@ -1,4 +1,5 @@
 import type { User, Attachment } from "./types";
+import { backendOrigin } from "./backend";
 let accessToken = "";
 let refreshPromise: Promise<{ accessToken: string; user: User } | null> | null =
   null;
@@ -69,7 +70,7 @@ export function upload(
 ): Promise<Attachment> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/v1/media/" + channel);
+    xhr.open("POST", backendOrigin + "/api/v1/media/" + channel);
     xhr.setRequestHeader("Authorization", "Bearer " + accessToken);
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable)
@@ -95,11 +96,11 @@ export function upload(
   });
 }
 export async function mediaBlob(id: string) {
-  let r = await fetch("/api/v1/media/" + id + "/content", {
+  let r = await fetch(backendOrigin + "/api/v1/media/" + id + "/content", {
     headers: { Authorization: "Bearer " + accessToken },
   });
   if (r.status === 401 && (await restoreSession()))
-    r = await fetch("/api/v1/media/" + id + "/content", {
+    r = await fetch(backendOrigin + "/api/v1/media/" + id + "/content", {
       headers: { Authorization: "Bearer " + accessToken },
     });
   if (!r.ok) throw new Error("Media is unavailable.");

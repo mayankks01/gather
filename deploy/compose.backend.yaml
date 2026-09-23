@@ -1,0 +1,14 @@
+# Optional local container smoke test; a managed Docker host needs only the Dockerfile.
+# Copy backend.env.example to backend.env (ignored), fill it, then:
+# docker compose -f deploy/compose.backend.yaml up --build -d
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: backend/Gather.Api/Dockerfile
+    env_file: backend.env
+    ports: ["127.0.0.1:5082:8080"]
+    volumes: ["gather-production-data:/app/App_Data"]
+    restart: unless-stopped
+volumes:
+  gather-production-data:

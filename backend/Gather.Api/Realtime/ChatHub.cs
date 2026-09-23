@@ -9,22 +9,34 @@ namespace Gather.Api.Realtime;
 
 public sealed class ConnectionRegistry
 {
-    private readonly ConcurrentDictionary<string, string> connections = new();
-    public void Add(string connection, string user) => connections[connection] = user;
+    private readonly ConcurrentDictionary<string, (string User, int Version, Action Abort)> connections = new();
+    public void Add(string connection, string user, int version, Action abort) => connections[connection] = (user, version, abort);
     public void Remove(string connection) => connections.TryRemove(connection, out _);
-    public bool Online(string user) => connections.Values.Contains(user);
+    public bool Online(string user) => connections.Values.Any(c => c.User == user);
+    public void Revoke(string user, int version)
+    {
+        foreach (var entry in connections.Values.Where(c => c.User == user && c.Version < version)) entry.Abort();
+    }
+    public static string Group(string user, int version) => $"user:{user}:v:{version}";
 }
 public sealed class RealtimeEvents(IHubContext<ChatHub> hub, GatherDb db)
 {
-    public Task Notify(IEnumerable<string> users, string name, object? payload = null) => hub.Clients.Groups(users.Select(u => "user:" + u)).SendAsync(name, payload);
+    public async Task Notify(IEnumerable<string> users, string name, object? payload = null)
+    {
+        var ids = users.Distinct().ToArray();
+        // Versioned groups also exclude revoked passive connections on other Redis-connected instances.
+        var current = await db.Users.AsNoTracking().Where(u => ids.Contains(u.Id)).Select(u => new { u.Id, u.AuthVersion }).ToListAsync();
+        await hub.Clients.Groups(current.Select(u => ConnectionRegistry.Group(u.Id, u.AuthVersion))).SendAsync(name, payload);
+    }
     public async Task RoomChanged(string room) => await Notify(await db.Members.Where(m => m.RoomId == room).Select(m => m.UserId).ToListAsync(), "RoomsChanged");
 }
-public sealed class ChatService(GatherDb db, AccessService access, RealtimeEvents events, MessageViews views)
+public sealed class ChatService(GatherDb db, AccessService access, RealtimeEvents events, MessageViews views, MediaStorage storage)
 {
     public async Task<object> Send(string userId, SendInput input)
     {
         var channel = await access.Channel(input.ChannelId, userId, true);
         var files = input.AttachmentIds ?? [];
+        using var mediaLease = files.Length > 0 ? await storage.Lock() : null;
         Contracts.Require(input.Content.Length <= 4000 && (input.Content.Trim().Length > 0 || files.Length > 0), "Write a message of up to 4,000 characters, or attach a file.");
         Contracts.Require(Guid.TryParse(input.ClientMessageId, out _) && files.Length <= 10 && files.Distinct().Count() == files.Length, "Invalid message or attachments.");
         var existing = await db.Messages.Include(m => m.Attachments).FirstOrDefaultAsync(m => m.SenderId == userId && m.ClientMessageId == input.ClientMessageId);
@@ -81,7 +93,15 @@ public sealed class ChatService(GatherDb db, AccessService access, RealtimeEvent
 public sealed class ChatHub(ChatService chat, AccessService access, ConnectionRegistry registry, RealtimeEvents events, GatherDb db) : Hub
 {
     private string Me => Context.User!.UserId();
-    public override async Task OnConnectedAsync() { registry.Add(Context.ConnectionId, Me); await Groups.AddToGroupAsync(Context.ConnectionId, "user:" + Me); await base.OnConnectedAsync(); }
+    public override async Task OnConnectedAsync()
+    {
+        if (!int.TryParse(Context.User!.FindFirst("version")?.Value, out var version)) { Context.Abort(); return; }
+        registry.Add(Context.ConnectionId, Me, version, Context.Abort);
+        var current = await db.Users.AsNoTracking().Where(u => u.Id == Me).Select(u => (int?)u.AuthVersion).SingleOrDefaultAsync();
+        if (current != version) { registry.Remove(Context.ConnectionId); Context.Abort(); return; }
+        await Groups.AddToGroupAsync(Context.ConnectionId, ConnectionRegistry.Group(Me, version));
+        await base.OnConnectedAsync();
+    }
     public override async Task OnDisconnectedAsync(Exception? exception) { registry.Remove(Context.ConnectionId); await base.OnDisconnectedAsync(exception); }
     public async Task SubscribeChannel(string channelId) { await access.Channel(channelId, Me); }
     public Task UnsubscribeChannel(string channelId) => Task.CompletedTask;

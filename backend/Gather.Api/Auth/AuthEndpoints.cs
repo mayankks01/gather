@@ -12,7 +12,16 @@ public static class AuthEndpoints
         auth.MapPost("/login", (LoginInput input, AuthService service, HttpResponse response) => service.Login(input, response));
         auth.MapPost("/refresh", (AuthService service, HttpContext context) => service.Refresh(context));
         auth.MapPost("/logout", async (AuthService service, HttpContext context) => { await service.Logout(context); return Results.NoContent(); });
-        auth.MapPost("/forgot-password", async (EmailInput input, GatherDb db, AuthService service) => { var email = AuthService.Normalize(input.Email); var user = await db.Users.FirstOrDefaultAsync(x => x.Email == email); if (user != null) await service.SendActionLink(user, "reset"); return Results.Ok(new { message = "If that account exists, a recovery link has been sent." }); });
+        auth.MapPost("/forgot-password", async (EmailInput input, GatherDb db, AuthService service) =>
+        {
+            var email = AuthService.Normalize(input.Email); var user = await db.Users.FirstOrDefaultAsync(x => x.Email == email);
+            if (user != null)
+            {
+                // Keep the same public response during a provider outage to avoid revealing account existence.
+                try { await service.SendActionLink(user, "reset"); } catch (ApiException e) when (e.Status == 503) { }
+            }
+            return Results.Ok(new { message = "If that account exists, a recovery link has been sent." });
+        });
         auth.MapPost("/reset-password", async (ResetInput input, AuthService service) => { await service.UseAction(input.Token, "reset", input.Password); return Results.NoContent(); });
         auth.MapPost("/verify-email", async (TokenInput input, AuthService service) => { await service.UseAction(input.Token, "verify"); return Results.NoContent(); });
         auth.MapPost("/resend-verification", async (ClaimsPrincipal principal, GatherDb db, AuthService service) => { var user = await db.Users.FindAsync(principal.UserId()); if (user != null && !user.EmailVerified) await service.SendActionLink(user, "verify"); return Results.NoContent(); }).RequireAuthorization();

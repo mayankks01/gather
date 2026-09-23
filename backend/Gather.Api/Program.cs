@@ -25,6 +25,11 @@ if (string.IsNullOrWhiteSpace(builder.Configuration["Jwt:Key"]))
 }
 if (builder.Configuration["Jwt:Key"]!.Length < 32) throw new InvalidOperationException("JWT signing key must be at least 32 characters.");
 builder.Configuration["App:PublicUrl"] ??= "http://localhost:5173";
+builder.ConfigureHosting();
+EmailSender.Validate(builder.Configuration, builder.Environment);
+builder.Services.AddSingleton<EmailSender>();
+builder.Services.AddSingleton<MediaStorage>();
+builder.Services.AddHostedService<MediaCleanup>();
 builder.Services.AddDbContext<GatherDb>(options =>
 {
     if (builder.Configuration["Database:Provider"] == "Postgres") options.UseNpgsql(builder.Configuration.GetConnectionString("Gather"));
@@ -55,6 +60,7 @@ builder.Services.AddRateLimiter(o =>
 });
 var app = builder.Build();
 app.UseExceptionHandler();
+app.UseHosting();
 app.Use(async (context, next) =>
 {
     context.Response.Headers["X-Content-Type-Options"] = "nosniff"; context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
@@ -65,9 +71,21 @@ app.Use(async (context, next) =>
     catch (ApiException e) { context.Response.StatusCode = e.Status; await Results.Problem(statusCode: e.Status, detail: e.Message).ExecuteAsync(context); }
 });
 app.UseAuthentication(); app.UseAuthorization(); app.UseRateLimiter();
-if (!app.Environment.IsDevelopment()) app.UseHsts();
 using (var scope = app.Services.CreateScope()) { var db = scope.ServiceProvider.GetRequiredService<GatherDb>(); await SchemaUpgrades.Apply(db); }
 app.MapGet("/api/v1/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/api/v1/ready", async (GatherDb db, MediaStorage storage, CancellationToken cancel) =>
+{
+    if (!await db.Database.CanConnectAsync(cancel)) return Results.StatusCode(503);
+    try
+    {
+        Directory.CreateDirectory(storage.DirectoryPath);
+        var probe = Path.Combine(storage.DirectoryPath, $".ready-{Guid.NewGuid():N}");
+        await using var stream = new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose);
+        return Results.Ok(new { status = "ready" });
+    }
+    catch (IOException) { return Results.StatusCode(503); }
+    catch (UnauthorizedAccessException) { return Results.StatusCode(503); }
+});
 app.MapAuth(); app.MapRooms(); app.MapConversations(); app.MapMedia();
 app.MapMessageTools();
 app.MapPictures();

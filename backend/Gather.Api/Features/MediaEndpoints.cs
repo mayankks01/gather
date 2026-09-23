@@ -10,17 +10,20 @@ public static class MediaEndpoints
     public static void MapMedia(this WebApplication app)
     {
         var media = app.MapGroup("/api/v1/media").RequireAuthorization();
-        media.MapPost("/{channelId}", async (string channelId, IFormFile file, ClaimsPrincipal p, GatherDb db, AccessService access, IWebHostEnvironment env, CancellationToken cancel) =>
+        media.MapPost("/{channelId}", async (string channelId, IFormFile file, ClaimsPrincipal p, GatherDb db, AccessService access, MediaStorage storage, CancellationToken cancel) =>
         {
             var user = p.UserId(); await access.Channel(channelId, user, true);
             var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
             var isImage = new[] { ".jpg", ".jpeg", ".png", ".webp", ".gif" }.Contains(ext);
             Contracts.Require(isImage || new[] { ".mp4", ".webm", ".mov" }.Contains(ext), "Choose a JPEG, PNG, GIF, WebP, MP4, WebM or MOV file.");
             Contracts.Require(file.Length > 0 && file.Length <= (isImage ? 10L : 100L) * 1024 * 1024, isImage ? "Images must be under 10 MB." : "Videos must be under 100 MB.");
-            var directory = Path.Combine(env.ContentRootPath, "App_Data", "media"); Directory.CreateDirectory(directory);
+            using var lease = await storage.Lock(cancel);
+            await storage.CheckQuota(db, user, file.Length, cancel: cancel);
+            var directory = storage.DirectoryPath;
             var key = Guid.NewGuid().ToString("N") + (isImage ? ".webp" : ext); var path = Path.Combine(directory, key);
             string contentType;
             await using var source = file.OpenReadStream();
+            var saved = false;
             try
             {
                 if (isImage)
@@ -44,11 +47,16 @@ public static class MediaEndpoints
                     source.Position = 0; await using var output = System.IO.File.Create(path); await source.CopyToAsync(output, cancel);
                     contentType = ext == ".webm" ? "video/webm" : ext == ".mov" ? "video/quicktime" : "video/mp4";
                 }
+                var size = new FileInfo(path).Length;
+                await storage.CheckQuota(db, user, size, existingFile: true, cancel: cancel);
+                var attachment = new Attachment { UploaderId = user, ChannelId = channelId, FileName = Path.GetFileName(file.FileName)[..Math.Min(Path.GetFileName(file.FileName).Length, 150)], ContentType = contentType, StorageKey = key, Size = size };
+                db.Attachments.Add(attachment); await db.SaveChangesAsync(cancel);
+                saved = true;
+                return Contracts.File(attachment);
             }
             catch (UnknownImageFormatException) { throw new ApiException(400, "This image could not be decoded."); }
             catch (InvalidImageContentException) { throw new ApiException(400, "This image is damaged or unsupported."); }
-            var attachment = new Attachment { UploaderId = user, ChannelId = channelId, FileName = Path.GetFileName(file.FileName)[..Math.Min(Path.GetFileName(file.FileName).Length, 150)], ContentType = contentType, StorageKey = key, Size = new FileInfo(path).Length };
-            db.Attachments.Add(attachment); await db.SaveChangesAsync(cancel); return Contracts.File(attachment);
+            finally { if (!saved && System.IO.File.Exists(path)) System.IO.File.Delete(path); }
         }).DisableAntiforgery().RequireRateLimiting("upload");
         media.MapGet("/{id}/content", async (string id, ClaimsPrincipal p, GatherDb db, AccessService access, IWebHostEnvironment env) =>
         {

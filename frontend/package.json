@@ -10,6 +10,11 @@
     "test:api": "node --test ../tests/api.test.mjs",
     "format": "prettier --write src"
   },
+  "overrides": {
+    "@vercel/routing-utils": {
+      "path-to-regexp": "^6.3.0"
+    }
+  },
   "dependencies": {
     "@microsoft/signalr": "^10.0.0",
     "lucide-react": "^0.468.0",
@@ -20,9 +25,10 @@
   "devDependencies": {
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@vercel/config": "^0.7.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.4.3",
+    "prettier": "^3.6.0",
     "typescript": "~5.7.2",
-    "prettier": "^3.6.0"
+    "vite": "^6.4.3"
   }
 }

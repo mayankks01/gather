@@ -11,3 +11,5 @@ obj/
 !.env.example
 App_Data/
 artifacts/
+.vercel/
+deploy/backend.env

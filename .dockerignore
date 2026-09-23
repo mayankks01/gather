@@ -6,3 +6,6 @@
 **/App_Data
 .env
 .env.*
+artifacts/
+.vercel/
+deploy/backend.env

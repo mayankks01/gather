@@ -16,6 +16,10 @@ jobs:
       - run: dotnet build backend/Gather.Api -c Release
       - run: npm ci && npm run build
         working-directory: frontend
+      - name: Deployment safeguards and Vercel configuration
+        env:
+          GATHER_TEST_ASSEMBLY: backend/Gather.Api/bin/Release/net10.0/Gather.Api.dll
+        run: node --test tests/deployment.test.mjs tests/vercel-config.test.mjs
       - name: Start API and run integration checks
         run: |
           ASPNETCORE_ENVIRONMENT=Development dotnet run --project backend/Gather.Api --no-launch-profile --no-build -c Release --urls http://localhost:5080 > /tmp/gather-api.log 2>&1 &

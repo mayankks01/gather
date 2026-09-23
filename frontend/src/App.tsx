@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { api, restoreSession, setToken, token } from "./lib/api";
 import { refreshPicture } from "./lib/pictures";
+import { backendOrigin } from "./lib/backend";
 import { Picture } from "./components/Pictures";
 import type { Direct, DirectRequest, Message, Room, User } from "./lib/types";
 import { DirectRequests } from "./components/DirectRequests";
@@ -174,7 +175,8 @@ export default function App() {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     const connection = new HubConnectionBuilder()
-      .withUrl("/hubs/chat", {
+      .withUrl(backendOrigin + "/hubs/chat", {
+        withCredentials: false,
         accessTokenFactory: async () => {
           try {
             const payload = JSON.parse(atob(token().split(".")[1]));

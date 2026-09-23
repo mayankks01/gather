@@ -2,6 +2,18 @@
 
 Validated locally on Windows with .NET 10 and Node.js 22.
 
+## Vercel / Docker deployment preparation — 23 September 2026
+
+- Release backend build passes with zero warnings/errors; frontend TypeScript/Vite build passes (approximately 128 KB gzip JavaScript).
+- All 31 existing feature tests pass against a new isolated SQLite database. Existing local user databases were not changed.
+- Eight deployment regression tests pass: authenticated proxy metadata, distinct client rate limits, CORS, two passive sockets revoked after password reset, delivery to a newly authenticated socket, single-use reset links, failed-upload cleanup, concurrent user/global quotas, cleanup across restart while retaining sent attachments, Production cookie/HSTS/origin controls and rejection of an SMTP server without mandatory TLS. The SMTP test uses a local sink and sends no external mail.
+- Two Vercel configuration checks pass: invalid/missing deployment values fail clearly, and API routing references the server-only secret without embedding its value. Configured CSP allows the existing Google Fonts CSS/font hosts, API HTTPS and WebSocket origins.
+- The Vercel helper's routing dependency is overridden to patched `path-to-regexp` 6.3.x; npm audit reports zero known vulnerabilities after installation.
+- The NuGet vulnerability scan also reports no known vulnerable packages, including transitive SMTP dependencies. Docker Desktop's Linux engine remains unavailable locally, so no container runtime verification is claimed.
+- New deployment/config tests are included in GitHub Actions. The live Vercel rewrite, public cookie refresh, real SMTP delivery, Linux container/volume behavior, PostgreSQL/Redis and backup restoration still require environment-specific acceptance checks. See [VERCEL-DEPLOYMENT.md](VERCEL-DEPLOYMENT.md).
+
+## Earlier local verification
+
 - Backend: `dotnet build backend/Gather.Api --no-restore` succeeds.
 - Frontend: `npm run build` succeeds, including strict TypeScript checking. The initial production JavaScript bundle is approximately 126 KB gzip; the PRD’s 250 KB proposal is met by the current build output, excluding externally loaded fonts and user media.
 - Integration suite: `node --test tests/api.test.mjs` passes 31 checks against an isolated SQLite database on port 5081.

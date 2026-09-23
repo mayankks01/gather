@@ -5,12 +5,13 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Gather.Api.Data;
 using Gather.Api.Domain;
+using Gather.Api.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 namespace Gather.Api.Auth;
 
-public sealed class AuthService(GatherDb db, IConfiguration config, IWebHostEnvironment env)
+public sealed class AuthService(GatherDb db, IConfiguration config, IWebHostEnvironment env, EmailSender mail, ConnectionRegistry connections)
 {
     private static readonly PasswordHasher<User> Hasher = new();
     private static readonly string[] CommonPasswords = ["password123", "password1234", "1234567890", "qwerty12345", "abcdefghij", "letmein1234", "gather12345"];
@@ -91,9 +92,7 @@ public sealed class AuthService(GatherDb db, IConfiguration config, IWebHostEnvi
         db.ActionTokens.Add(new ActionToken { Hash = Hash(raw), UserId = user.Id, Purpose = purpose, ExpiresAt = Clock.Now + (long)TimeSpan.FromHours(purpose == "reset" ? 1 : 24).TotalMilliseconds });
         await db.SaveChangesAsync();
         var url = $"{config["App:PublicUrl"]}/?action={purpose}&token={raw}";
-        // Local development uses a private outbox. No tokens are returned from public APIs.
-        var directory = Path.Combine(env.ContentRootPath, "App_Data", "mail"); Directory.CreateDirectory(directory);
-        await System.IO.File.WriteAllTextAsync(Path.Combine(directory, $"{Guid.NewGuid():N}.txt"), $"To: {user.Email}\nSubject: Gather {purpose}\n\nOpen this single-use link: {url}\n");
+        await mail.Send(user.Email, purpose, url);
     }
     public async Task UseAction(string raw, string purpose, string? password = null)
     {
@@ -106,5 +105,6 @@ public sealed class AuthService(GatherDb db, IConfiguration config, IWebHostEnvi
         var count = await db.ActionTokens.Where(t => t.Hash == hash && !t.Used).ExecuteUpdateAsync(s => s.SetProperty(t => t.Used, true));
         Contracts.Require(count == 1, "This link was already used.");
         await db.SaveChangesAsync(); await tx.CommitAsync();
+        if (purpose == "reset") connections.Revoke(user.Id, user.AuthVersion);
     }
 }

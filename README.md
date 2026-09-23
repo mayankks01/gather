@@ -4,6 +4,8 @@ A real-time community chat application based on **Gather PRD v1.0 (21 September 
 
 ## Start locally
 
+**Deploying to Vercel?** Follow [the Vercel + Docker API guide](docs/VERCEL-DEPLOYMENT.md). It includes the exact project settings, persistent-storage requirements and environment variables.
+
 Requirements: **.NET 10 SDK**, **Node.js 22.12+**, and npm.
 
 From the repository root, open two terminals:
@@ -27,7 +29,7 @@ The API listens on port **5080**. Vite proxies `/api` and `/hubs`, so the browse
 
 ### Email in development
 
-Verification and password-reset messages are written to `backend/Gather.Api/App_Data/mail/`. Open the newest `.txt` file and follow its link. Tokens are single-use and expire; they are not returned from public account endpoints. This adapter **does not deliver email**. Connect a transactional email service before deployment.
+Without SMTP settings in Development, verification and password-reset messages are written to `backend/Gather.Api/App_Data/mail/`. Open the newest `.txt` file and follow its link. Tokens are single-use and expire; they are not returned from public account endpoints. Production requires SMTP configuration and sends mail over TLS; it never uses the development file outbox.
 
 Local uploads and the SQLite database live in ignored `backend/Gather.Api/App_Data/`. Refresh tokens are stored as hashes in the database and sent in an httpOnly, SameSite=Strict cookie. The cookie is Secure outside Development. Access tokens last 15 minutes and are kept in memory. Without a configured signing key, Development generates a new key per API restart; refresh restores sessions after a restart.
 

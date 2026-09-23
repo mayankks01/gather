@@ -1,4 +1,5 @@
 import { restoreSession, token } from "./api";
+import { backendOrigin } from "./backend";
 
 const pictures = new Map<string, { at: number; blob: Promise<Blob | null> }>();
 export function refreshPicture(path?: string) {
@@ -23,7 +24,7 @@ async function pictureRequest(path: string, method = "GET", file?: File) {
   const form = file ? new FormData() : undefined;
   if (file) form!.append("file", file);
   const request = () =>
-    fetch("/api/v1" + path, {
+    fetch(backendOrigin + "/api/v1" + path, {
       method,
       headers: { Authorization: "Bearer " + token() },
       body: form,
