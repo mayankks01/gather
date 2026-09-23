@@ -1,5 +1,7 @@
 # Gather
 
+**Live demo:** [https://gather-nine-nu.vercel.app/](https://gather-nine-nu.vercel.app/)
+
 A real-time community chat application based on **Gather PRD v1.0 (21 September 2026)**. This repository contains a working development implementation, not a production-certified v1.0 release.
 
 ## Start locally
