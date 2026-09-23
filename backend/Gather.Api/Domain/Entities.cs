@@ -138,3 +138,11 @@ public sealed class DmRequest
     public long UpdatedAt { get; set; } = Clock.Now;
 }
 public sealed class RoomPicture { public string RoomId { get; set; } = ""; public byte[] Data { get; set; } = []; }
+// Durable upload journal, deliberately independent of attachment/message cascades.
+public sealed class CloudAsset
+{
+    public string StorageKey { get; set; } = "";
+    public string UploaderId { get; set; } = "";
+    public long Size { get; set; }
+    public long CreatedAt { get; set; } = Clock.Now;
+}

@@ -1,11 +1,13 @@
 using Gather.Api.Data;
+using Gather.Api.Domain;
 using Microsoft.EntityFrameworkCore;
 
 namespace Gather.Api.Features;
 
 // Local-volume storage is intentionally single-instance. Uploads, claims and cleanup share this lock.
-public sealed class MediaStorage(IWebHostEnvironment env, IConfiguration config)
+public sealed class MediaStorage(IWebHostEnvironment env, IConfiguration config, CloudinaryMedia cloud)
 {
+    public bool IsCloud { get; } = CloudinaryMedia.Enabled(config);
     private readonly SemaphoreSlim gate = new(1);
     public string DirectoryPath { get; } = Path.Combine(env.ContentRootPath, "App_Data", "media");
     public long UserLimit { get; } = Positive(config, "Storage:UserQuotaBytes", 512L * 1024 * 1024);
@@ -31,19 +33,48 @@ public sealed class MediaStorage(IWebHostEnvironment env, IConfiguration config)
     public async Task CheckQuota(GatherDb db, string user, long incoming, bool existingFile = false, CancellationToken cancel = default)
     {
         Directory.CreateDirectory(DirectoryPath);
-        var used = await db.Attachments.Where(a => a.UploaderId == user).SumAsync(a => (long?)a.Size, cancel) ?? 0;
+        var used = IsCloud ? await db.CloudAssets.Where(a => a.UploaderId == user).SumAsync(a => (long?)a.Size, cancel) ?? 0
+            : await db.Attachments.Where(a => a.UploaderId == user).SumAsync(a => (long?)a.Size, cancel) ?? 0;
         Contracts.Require(incoming <= UserLimit - used, "Your upload storage is full. Try again after unused uploads expire.", 413);
-        var total = new DirectoryInfo(DirectoryPath).EnumerateFiles().Sum(f => f.Length);
-        Contracts.Require((existingFile ? 0 : incoming) <= TotalLimit - total, "Upload storage is full. Please try again later.", 507);
+        var total = IsCloud ? await db.CloudAssets.SumAsync(a => (long?)a.Size, cancel) ?? 0 : new DirectoryInfo(DirectoryPath).EnumerateFiles().Sum(f => f.Length);
+        Contracts.Require((existingFile && !IsCloud ? 0 : incoming) <= TotalLimit - total, "Upload storage is full. Please try again later.", 507);
         // On Linux, stat the mounted data directory rather than the container's root filesystem.
         var free = new DriveInfo(OperatingSystem.IsWindows() ? Path.GetPathRoot(Path.GetFullPath(DirectoryPath))! : DirectoryPath).AvailableFreeSpace;
         Contracts.Require(free - (existingFile ? 0 : incoming) >= FreeReserve, "Uploads are temporarily unavailable due to low disk space.", 507);
     }
+    public async Task Store(GatherDb db, Attachment attachment, string path, CancellationToken cancel)
+    {
+        if (!IsCloud) return;
+        var key = CloudinaryMedia.Key(attachment.ContentType.StartsWith("image/") ? "image" : "video", "gather/" + Guid.NewGuid().ToString("N"));
+        // Save before the remote request: even a process crash or uncertain provider response leaves a cleanup record.
+        var asset = new CloudAsset { StorageKey = key, UploaderId = attachment.UploaderId, Size = attachment.Size };
+        db.CloudAssets.Add(asset); await db.SaveChangesAsync(cancel);
+        var size = await cloud.Upload(key, path, cancel);
+        asset.Size = size;
+        await db.SaveChangesAsync(cancel);
+        await CheckQuota(db, asset.UploaderId, 0, existingFile: true, cancel: cancel);
+        attachment.Size = size; attachment.StorageKey = key;
+    }
+    public IResult CloudContent(Attachment attachment) => cloud.Content(attachment.StorageKey, attachment.ContentType);
     public async Task Cleanup(GatherDb db, CancellationToken cancel)
     {
         using var lease = await Lock(cancel);
         Directory.CreateDirectory(DirectoryPath);
         var cutoff = DateTime.UtcNow - Retention;
+        if (IsCloud)
+        {
+            var before = new DateTimeOffset(cutoff).ToUnixTimeMilliseconds();
+            var stale = await db.CloudAssets.AsNoTracking().Where(a => a.CreatedAt < before && !db.Attachments.Any(f => f.StorageKey == a.StorageKey && f.MessageId != null)).Take(100).ToListAsync(cancel);
+            foreach (var asset in stale)
+            {
+                // Delete remotely first; failures retain the journal and quota reservation for retry after restart.
+                await cloud.Delete(asset.StorageKey, cancel);
+                await using var transaction = await db.Database.BeginTransactionAsync(cancel);
+                await db.Attachments.Where(a => a.StorageKey == asset.StorageKey && a.MessageId == null).ExecuteDeleteAsync(cancel);
+                await db.CloudAssets.Where(a => a.StorageKey == asset.StorageKey).ExecuteDeleteAsync(cancel);
+                await transaction.CommitAsync(cancel);
+            }
+        }
         foreach (var file in new DirectoryInfo(DirectoryPath).EnumerateFiles())
         {
             cancel.ThrowIfCancellationRequested();

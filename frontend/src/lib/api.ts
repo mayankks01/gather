@@ -57,7 +57,9 @@ export async function api<T>(
       problem.detail ||
         (response.status === 429
           ? "Too many requests. Please wait a moment."
-          : "The request could not be completed."),
+          : [502, 503, 504].includes(response.status)
+            ? "The server may be waking up or temporarily unavailable. Wait about a minute and try again."
+            : "The request could not be completed."),
     );
   }
   return response.status === 204 ? (undefined as T) : response.json();

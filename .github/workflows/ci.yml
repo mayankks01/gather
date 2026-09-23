@@ -14,6 +14,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: dotnet build backend/Gather.Api -c Release
+      - run: dotnet run --project tests/Gather.ProviderTests -c Release
       - run: npm ci && npm run build
         working-directory: frontend
       - name: Deployment safeguards and Vercel configuration
@@ -27,6 +28,46 @@ jobs:
           trap 'kill "$API_PID"' EXIT
           for attempt in $(seq 1 30); do
             if curl -fsS http://localhost:5080/api/v1/health; then break; fi
+            sleep 1
+          done
+          node --test tests/api.test.mjs
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gather
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: gather_tests
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U gather -d gather_tests"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: dotnet build backend/Gather.Api -c Release
+      - run: npm ci
+        working-directory: frontend
+      - name: PostgreSQL feature regression checks
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          Database__Provider: Postgres
+          ConnectionStrings__Gather: Host=localhost;Database=gather_tests;Username=gather;Password=ci-only-password;SSL Mode=Disable
+        run: |
+          dotnet run --project backend/Gather.Api --no-launch-profile --no-build -c Release --urls http://localhost:5080 > /tmp/gather-postgres.log 2>&1 &
+          API_PID=$!
+          trap 'kill "$API_PID"' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://localhost:5080/api/v1/ready; then break; fi
             sleep 1
           done
           node --test tests/api.test.mjs

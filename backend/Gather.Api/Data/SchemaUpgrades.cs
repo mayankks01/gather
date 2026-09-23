@@ -14,6 +14,29 @@ public static class SchemaUpgrades
         await Pictures(db);
         await DirectRequests(db);
         await HiddenDirects(db);
+        await CloudStorage(db);
+    }
+    private static async Task CloudStorage(GatherDb db)
+    {
+        const string version = "20260923-cloud-storage";
+        if (await db.SchemaVersions.AnyAsync(x => x.Version == version)) return;
+        if (db.Database.GetDbConnection() is SqliteConnection source && File.Exists(source.DataSource))
+        {
+            var backups = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(source.DataSource))!, "backups");
+            Directory.CreateDirectory(backups);
+            await source.OpenAsync();
+            await using var backup = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(backups, $"before-cloud-storage-{DateTime.UtcNow:yyyyMMddHHmmssfff}.db") }.ToString());
+            await backup.OpenAsync(); source.BackupDatabase(backup); await source.CloseAsync();
+        }
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "CloudAssets" (
+                "StorageKey" TEXT NOT NULL PRIMARY KEY, "UploaderId" TEXT NOT NULL,
+                "Size" BIGINT NOT NULL, "CreatedAt" BIGINT NOT NULL);
+            CREATE INDEX IF NOT EXISTS "IX_CloudAssets_CreatedAt" ON "CloudAssets" ("CreatedAt");
+            """);
+        db.SchemaVersions.Add(new SchemaVersion { Version = version });
+        await db.SaveChangesAsync(); await transaction.CommitAsync();
     }
     private static async Task HiddenDirects(GatherDb db)
     {

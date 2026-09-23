@@ -17,7 +17,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders(); builder.Logging.AddJsonConsole();
 var dataDirectory = Path.Combine(builder.Environment.ContentRootPath, "App_Data");
 Directory.CreateDirectory(dataDirectory);
-builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataDirectory, "keys")));
+if (builder.Configuration.GetValue<bool>("Hosting:Ephemeral"))
+    builder.Services.AddDataProtection().UseEphemeralDataProtectionProvider(); // JWT/refresh auth uses the stable Jwt:Key and database, not data-protection cookies.
+else builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataDirectory, "keys")));
 if (string.IsNullOrWhiteSpace(builder.Configuration["Jwt:Key"]))
 {
     if (!builder.Environment.IsDevelopment()) throw new InvalidOperationException("Configure Jwt__Key with a random secret of at least 32 characters.");
@@ -27,12 +29,24 @@ if (builder.Configuration["Jwt:Key"]!.Length < 32) throw new InvalidOperationExc
 builder.Configuration["App:PublicUrl"] ??= "http://localhost:5173";
 builder.ConfigureHosting();
 EmailSender.Validate(builder.Configuration, builder.Environment);
+CloudinaryMedia.Validate(builder.Configuration);
+if (builder.Configuration.GetValue<bool>("Hosting:Ephemeral"))
+{
+    if (builder.Configuration["Database:Provider"] != "Postgres" || !CloudinaryMedia.Enabled(builder.Configuration) || EmailSender.Provider(builder.Configuration) != "Brevo")
+        throw new InvalidOperationException("Ephemeral hosting requires Postgres, Cloudinary storage and Brevo email. Local data would be lost on restart.");
+}
+builder.Services.AddHttpClient("providers", client => client.Timeout = TimeSpan.FromSeconds(30)).RemoveAllLoggers();
+builder.Services.AddHttpClient("media-provider", client => client.Timeout = TimeSpan.FromMinutes(3)).RemoveAllLoggers();
+builder.Services.AddSingleton<CloudinaryMedia>();
 builder.Services.AddSingleton<EmailSender>();
 builder.Services.AddSingleton<MediaStorage>();
 builder.Services.AddHostedService<MediaCleanup>();
+var provider = builder.Configuration["Database:Provider"] ?? "Sqlite";
+if (provider is not ("Sqlite" or "Postgres")) throw new InvalidOperationException("Database__Provider must be Sqlite or Postgres.");
+var postgresConnection = provider == "Postgres" ? DatabaseConfiguration.PostgresConnection(builder.Configuration, builder.Environment.IsDevelopment()) : null;
 builder.Services.AddDbContext<GatherDb>(options =>
 {
-    if (builder.Configuration["Database:Provider"] == "Postgres") options.UseNpgsql(builder.Configuration.GetConnectionString("Gather"));
+    if (postgresConnection != null) options.UseNpgsql(postgresConnection);
     else options.UseSqlite(builder.Configuration.GetConnectionString("Gather") ?? $"Data Source={Path.Combine(dataDirectory, "gather.db")}");
 });
 builder.Services.AddScoped<AuthService>(); builder.Services.AddScoped<AccessService>(); builder.Services.AddScoped<ChatService>(); builder.Services.AddScoped<RealtimeEvents>(); builder.Services.AddSingleton<ConnectionRegistry>();
@@ -71,7 +85,12 @@ app.Use(async (context, next) =>
     catch (ApiException e) { context.Response.StatusCode = e.Status; await Results.Problem(statusCode: e.Status, detail: e.Message).ExecuteAsync(context); }
 });
 app.UseAuthentication(); app.UseAuthorization(); app.UseRateLimiter();
-using (var scope = app.Services.CreateScope()) { var db = scope.ServiceProvider.GetRequiredService<GatherDb>(); await SchemaUpgrades.Apply(db); }
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<GatherDb>(); await SchemaUpgrades.Apply(db);
+    if (builder.Configuration.GetValue<bool>("Hosting:Ephemeral") && await db.Attachments.AnyAsync(a => !a.StorageKey.StartsWith("cloudinary:")))
+        throw new InvalidOperationException("This database has local attachments. Migrate their files before enabling ephemeral hosting, or use a fresh database.");
+}
 app.MapGet("/api/v1/health", () => Results.Ok(new { status = "ok" }));
 app.MapGet("/api/v1/ready", async (GatherDb db, MediaStorage storage, CancellationToken cancel) =>
 {

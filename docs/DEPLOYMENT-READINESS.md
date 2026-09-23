@@ -1,5 +1,7 @@
 # Deployment readiness review — 23 September 2026
 
+**Free-hosting update:** [FREE-DEPLOYMENT.md](FREE-DEPLOYMENT.md) is now the primary demo deployment recipe: Vercel + Render Free + Neon + authenticated Cloudinary assets + Brevo HTTPS email. The optional local-storage/SMTP path below remains supported. Provider behavior is covered by fake-HTTP regression tests; real account activation, credentials, delivery, cloud download permissions and hosted PostgreSQL behavior need live acceptance checks.
+
 **Update after deployment work:** Vercel frontend routing and a Production Docker API recipe are now supplied; see [VERCEL-DEPLOYMENT.md](VERCEL-DEPLOYMENT.md). SMTP over mandatory TLS, authenticated Vercel client-IP forwarding, explicit trusted proxy configuration, revoked-session delivery protection, attachment quotas/cleanup, and a readiness endpoint have been implemented. Frontend CSP includes the existing Google Fonts origins. Local regression results are recorded in [VALIDATION.md](VALIDATION.md).
 
 The numbered findings below are the **original audit**, retained for context. Their code changes are addressed for the Vercel/single-instance Docker setup; hosted HTTPS/cookie/WebSocket behavior, real email delivery, persistent-volume permissions, backups and monitoring still require verification. The original `compose.yaml` remains a Development-only recipe. No live deployment has been performed.

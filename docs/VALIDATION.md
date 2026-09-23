@@ -2,6 +2,15 @@
 
 Validated locally on Windows with .NET 10 and Node.js 22.
 
+## Free-service integrations — 23 September 2026
+
+- Added Neon `DATABASE_URL` support with URL-decoded credentials, a 10-connection pool and verified TLS in Production. `Hosting__Ephemeral=true` refuses local storage/database/SMTP configurations and databases referencing unmigrated local attachments.
+- Added authenticated Cloudinary uploads and authorized API-proxied, expiring signed downloads. Durable upload journals reserve quota and enable cleanup after upload failures, crashes, restarts and message/room cascades. Existing local Development media behavior remains supported; avatars/icons already persist in the database.
+- Added Brevo's HTTPS transactional email API without SMTP dependencies for that provider. Provider errors do not fall back to an ephemeral outbox; sensitive provider responses and signed download URLs are not logged by the configured HTTP clients.
+- Eight provider checks pass using fake HTTP handlers and isolated SQLite, covering request authentication/signatures, private uploads, streaming ranges, email failure handling, Neon connection conversion, durable failure reservations, cleanup retry and preservation of sent media. No external email or upload was sent by these tests.
+- All 31 existing feature checks and 10 deployment/Vercel checks pass against isolated SQLite. Backend and frontend production builds pass. A separate PostgreSQL service job was added to GitHub Actions; its execution and live Neon/Cloudinary/Brevo acceptance remain pending. Docker Desktop is unavailable locally.
+- Free deployment instructions and environment placeholders are in [FREE-DEPLOYMENT.md](FREE-DEPLOYMENT.md); `render.yaml` specifies Free without a persistent disk. Local user databases and files were not migrated or replaced.
+
 ## Vercel / Docker deployment preparation — 23 September 2026
 
 - Release backend build passes with zero warnings/errors; frontend TypeScript/Vite build passes (approximately 128 KB gzip JavaScript).

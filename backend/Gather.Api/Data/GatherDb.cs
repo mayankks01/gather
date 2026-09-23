@@ -12,6 +12,7 @@ public sealed class GatherDb(DbContextOptions<GatherDb> options) : DbContext(opt
     public DbSet<Channel> Channels => Set<Channel>();
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
+    public DbSet<CloudAsset> CloudAssets => Set<CloudAsset>();
     public DbSet<ReadState> Reads => Set<ReadState>();
     public DbSet<Invite> Invites => Set<Invite>();
     public DbSet<Ban> Bans => Set<Ban>();
@@ -27,6 +28,8 @@ public sealed class GatherDb(DbContextOptions<GatherDb> options) : DbContext(opt
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.Entity<User>().HasIndex(x => x.Username).IsUnique();
+        b.Entity<CloudAsset>().HasKey(x => x.StorageKey);
+        b.Entity<CloudAsset>().HasIndex(x => x.CreatedAt);
         b.Entity<User>().HasIndex(x => x.Email).IsUnique();
         b.Entity<RefreshSession>().HasIndex(x => x.TokenHash).IsUnique();
         b.Entity<ActionToken>().HasKey(x => x.Hash);

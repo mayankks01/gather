@@ -1,0 +1,51 @@
+# Optional Render Blueprint. All external credentials are entered in Render, never committed.
+services:
+  - type: web
+    name: gather-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Gather.Api/Dockerfile
+    dockerContext: .
+    # Do not poll the database every few seconds: let Neon's free compute sleep when idle.
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ASPNETCORE_URLS
+        value: http://+:8080
+      - key: PORT
+        value: "8080"
+      - key: Hosting__Ephemeral
+        value: "true"
+      - key: Database__Provider
+        value: Postgres
+      - key: DATABASE_URL
+        sync: false
+      - key: Storage__Provider
+        value: Cloudinary
+      - key: Cloudinary__CloudName
+        sync: false
+      - key: Cloudinary__ApiKey
+        sync: false
+      - key: Cloudinary__ApiSecret
+        sync: false
+      - key: Email__Provider
+        value: Brevo
+      - key: Email__ApiKey
+        sync: false
+      - key: Email__From
+        sync: false
+      - key: App__PublicUrl
+        sync: false
+      - key: Jwt__Key
+        generateValue: true
+      - key: Proxy__VercelSecret
+        generateValue: true
+      - key: Storage__UserQuotaBytes
+        value: "134217728"
+      - key: Storage__TotalQuotaBytes
+        value: "1073741824"
+      - key: Storage__MinimumFreeBytes
+        value: "67108864"
+      - key: Storage__UnattachedHours
+        value: "24"

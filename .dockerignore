@@ -9,3 +9,4 @@
 artifacts/
 .vercel/
 deploy/backend.env
+deploy/free.env

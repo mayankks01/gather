@@ -1,5 +1,7 @@
 # Deploy Gather: Vercel frontend + Docker API
 
+**For the free-services setup, use [FREE-DEPLOYMENT.md](FREE-DEPLOYMENT.md).** The instructions below are the optional persistent-disk/SMTP route and require a paid Render disk. Do not combine their SQLite settings with Render Free.
+
 This setup uses Vercel for the React site and one long-running Docker service for ASP.NET Core, SignalR and persistent files. The existing .NET server is not a Vercel Function. No live deployment has been performed by preparing these files.
 
 ## 1. Push the changes to GitHub

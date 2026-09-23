@@ -50,19 +50,21 @@ public static class MediaEndpoints
                 var size = new FileInfo(path).Length;
                 await storage.CheckQuota(db, user, size, existingFile: true, cancel: cancel);
                 var attachment = new Attachment { UploaderId = user, ChannelId = channelId, FileName = Path.GetFileName(file.FileName)[..Math.Min(Path.GetFileName(file.FileName).Length, 150)], ContentType = contentType, StorageKey = key, Size = size };
+                await storage.Store(db, attachment, path, cancel);
                 db.Attachments.Add(attachment); await db.SaveChangesAsync(cancel);
                 saved = true;
                 return Contracts.File(attachment);
             }
             catch (UnknownImageFormatException) { throw new ApiException(400, "This image could not be decoded."); }
             catch (InvalidImageContentException) { throw new ApiException(400, "This image is damaged or unsupported."); }
-            finally { if (!saved && System.IO.File.Exists(path)) System.IO.File.Delete(path); }
+            finally { if ((!saved || storage.IsCloud) && System.IO.File.Exists(path)) System.IO.File.Delete(path); }
         }).DisableAntiforgery().RequireRateLimiting("upload");
-        media.MapGet("/{id}/content", async (string id, ClaimsPrincipal p, GatherDb db, AccessService access, IWebHostEnvironment env) =>
+        media.MapGet("/{id}/content", async (string id, ClaimsPrincipal p, GatherDb db, AccessService access, IWebHostEnvironment env, MediaStorage storage) =>
         {
             var a = await db.Attachments.FindAsync(id) ?? throw new ApiException(404, "Media not found."); await access.Channel(a.ChannelId, p.UserId());
             Contracts.Require(a.MessageId != null || a.UploaderId == p.UserId(), "Media not found.", 404);
             if (a.MessageId != null) Contracts.Require(!await db.Messages.AnyAsync(m => m.Id == a.MessageId && m.Deleted), "Media not found.", 404);
+            if (a.StorageKey.StartsWith("cloudinary:")) return storage.CloudContent(a);
             var path = Path.Combine(env.ContentRootPath, "App_Data", "media", a.StorageKey); Contracts.Require(System.IO.File.Exists(path), "Media not found.", 404);
             return Results.File(path, a.ContentType, enableRangeProcessing: true);
         });

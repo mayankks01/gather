@@ -13,3 +13,4 @@ App_Data/
 artifacts/
 .vercel/
 deploy/backend.env
+deploy/free.env
