@@ -37,6 +37,7 @@ Local uploads and the SQLite database live in ignored `backend/Gather.Api/App_Da
 - Password recovery and email verification using a development mail outbox.
 - JWT access tokens, rotating refresh cookies, refresh reuse detection, logout.
 - Public/private rooms, discovery, membership, custom room icons, an explicit default `general` channel.
+- Discover shows your joined public/private rooms first, with Open room buttons and unread counts, followed by other public rooms. Room search filters both sections without duplicate cards.
 - Owner/Admin/Moderator/Member permissions, role changes, ownership transfer, kick, ban/unban, leave, and confirmed deletion.
 - Timed room mutes with automatic expiry, role-hierarchy checks and a muted-composer notice.
 - Expiring and usage-limited invite links, preview, copy, revoke, and acceptance after signing in.
@@ -46,6 +47,9 @@ Local uploads and the SQLite database live in ignored `backend/Gather.Api/App_Da
 - Conversation search by text, sender, dates, and attachments; jump to matching messages.
 - Searchable emoji picker, room member filtering, and draft text saved per conversation in the current browser tab.
 - Username search, incoming/sent DM requests, accept/decline/cancel/block controls, and one conversation per user pair. New conversations unlock after acceptance; existing chats stay available.
+- Delete conversation removes a DM from your own inbox after confirmation. Message history and the other person's inbox are preserved; opening it again or a new message restores it. Use blocking to prevent further contact.
+- Remove connection on the Direct messages page disconnects both accounts after confirmation. Neither participant can chat or access the old history until a new request is accepted. Existing messages are retained for reconnecting; removing a connection does not block future requests.
+- People search separates accepted connections from new people, matches display names and usernames, and offers Open chat or Request. Connections appear before typing; new-person searches require three characters. Each group shows up to 20 matches, so narrow the search for larger lists.
 - Images and videos with upload progress/cancellation, drag/drop, clipboard paste, captions, inline previews and image lightbox.
 - Extension/content checks, size limits, image re-encoding/metadata stripping, membership-checked media downloads.
 - Responsive layout, light/dark appearance, keyboard-operable dialogs, loading/error/offline/empty states.

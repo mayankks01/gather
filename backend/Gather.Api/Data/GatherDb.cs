@@ -21,6 +21,7 @@ public sealed class GatherDb(DbContextOptions<GatherDb> options) : DbContext(opt
     public DbSet<MessagePin> Pins => Set<MessagePin>();
     public DbSet<SchemaVersion> SchemaVersions => Set<SchemaVersion>();
     public DbSet<DmRequest> DmRequests => Set<DmRequest>();
+    public DbSet<HiddenDirect> HiddenDirects => Set<HiddenDirect>();
     public DbSet<UserPicture> UserPictures => Set<UserPicture>();
     public DbSet<RoomPicture> RoomPictures => Set<RoomPicture>();
     protected override void OnModelCreating(ModelBuilder b)
@@ -59,6 +60,9 @@ public sealed class GatherDb(DbContextOptions<GatherDb> options) : DbContext(opt
         b.Entity<MessagePin>().HasOne<Message>().WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<SchemaVersion>().HasKey(x => x.Version);
         b.Entity<DmRequest>().HasKey(x => x.ChannelId);
+        b.Entity<HiddenDirect>().HasKey(x => new { x.UserId, x.ChannelId });
+        b.Entity<HiddenDirect>().HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<HiddenDirect>().HasOne<Channel>().WithMany().HasForeignKey(x => x.ChannelId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<DmRequest>().HasIndex(x => x.RequestId).IsUnique();
         b.Entity<DmRequest>().HasOne<Channel>().WithMany().HasForeignKey(x => x.ChannelId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<DmRequest>().HasOne<User>().WithMany().HasForeignKey(x => x.RequesterId).OnDelete(DeleteBehavior.Cascade);

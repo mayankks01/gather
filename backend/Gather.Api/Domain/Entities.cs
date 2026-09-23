@@ -87,6 +87,11 @@ public sealed class ReadState
     public string ChannelId { get; set; } = "";
     public string LastMessageId { get; set; } = "";
 }
+public sealed class HiddenDirect
+{
+    public string UserId { get; set; } = "";
+    public string ChannelId { get; set; } = "";
+}
 public sealed class Invite
 {
     public string Code { get; set; } = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();

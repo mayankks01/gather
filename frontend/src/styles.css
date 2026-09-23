@@ -618,9 +618,6 @@ a {
   border: 1px dashed #c9c0db;
   margin-top: 7px;
 }
-.rail-bottom {
-  margin-top: auto;
-}
 .room-icon {
   background: color-mix(in srgb, var(--room-color), white 86%);
   color: var(--room-color);
@@ -1324,6 +1321,13 @@ a {
   align-items: center;
   gap: 16px;
 }
+.discover-room-section {
+  margin-top: 28px;
+}
+.discover-room-section > h3 {
+  font-size: 18px;
+  margin: 0 0 16px;
+}
 .search-field {
   display: flex;
   align-items: center;
@@ -1440,6 +1444,22 @@ a {
 .direct-card > svg {
   color: var(--accent);
 }
+.direct-connection {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  min-width: 0;
+}
+.direct-connection .direct-card {
+  width: 100%;
+  border: 0;
+  text-align: left;
+}
+.remove-connection {
+  margin: 0 20px 14px;
+  min-height: 36px;
+  color: var(--danger);
+}
 .empty-state {
   margin: auto;
   text-align: center;
@@ -1483,6 +1503,69 @@ a {
 }
 .modal.wide {
   width: 660px;
+}
+.modal.settings-modal {
+  width: 580px;
+  max-height: 92dvh;
+  overflow: hidden;
+  color-scheme: light;
+}
+[data-theme="dark"] .settings-modal {
+  color-scheme: dark;
+}
+.settings-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(92dvh - 2px);
+  padding: 26px;
+}
+.settings-modal h2,
+.settings-modal .tabs,
+.settings-modal .settings-signout {
+  flex-shrink: 0;
+}
+.settings-modal .tabs {
+  margin-bottom: 16px;
+}
+.settings-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted) 50%, transparent) transparent;
+  padding: 4px 8px 4px 4px;
+  margin: -4px -8px -4px -4px;
+}
+.settings-modal .picture-editor {
+  padding: 0 0 16px;
+  margin-bottom: 0;
+}
+.settings-modal .picture-status:empty {
+  display: none;
+}
+.profile-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.modal.settings-modal textarea {
+  min-height: 76px;
+}
+.settings-modal .verification {
+  margin-bottom: 0;
+  flex-wrap: wrap;
+}
+.settings-modal .settings-signout {
+  margin-top: 20px;
+}
+@media (max-width: 480px) {
+  .settings-modal .modal-content {
+    padding: 22px 18px;
+  }
+  .profile-fields {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
 }
 .modal::backdrop {
   background: #29203670;
@@ -1528,6 +1611,7 @@ a {
   outline-color: var(--accent);
 }
 .search-results {
+  overflow-wrap: anywhere;
   margin-top: 24px;
   min-height: 100px;
 }

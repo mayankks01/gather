@@ -26,6 +26,7 @@ import { refreshPicture } from "./lib/pictures";
 import { Picture } from "./components/Pictures";
 import type { Direct, DirectRequest, Message, Room, User } from "./lib/types";
 import { DirectRequests } from "./components/DirectRequests";
+import { DiscoverRooms } from "./components/DiscoverRooms";
 import { Avatar, Brand, Empty, Modal } from "./components/Common";
 import { Chat } from "./components/Chat";
 import {
@@ -43,6 +44,8 @@ export default function App() {
     [directs, setDirects] = useState<Direct[]>([]),
     [blockedUsers, setBlockedUsers] = useState<User[]>([]),
     [blockBusy, setBlockBusy] = useState(false),
+    [deleteBusy, setDeleteBusy] = useState(false),
+    [removingConnection, setRemovingConnection] = useState(""),
     [requests, setRequests] = useState<DirectRequest[]>([]),
     [requestTab, setRequestTab] = useState<"incoming" | "sent">("incoming"),
     [active, setActive] = useState(""),
@@ -89,6 +92,9 @@ export default function App() {
     setBlockedUsers(blocks);
   }, []);
   const profileBlocked = blockedUsers.some((user) => user.id === profile?.id);
+  const profileDirect = directs.find(
+    (direct) => direct.user.id === profile?.id,
+  );
   const open = (channel: string) => {
     setActive(channel);
     setView("chat");
@@ -116,6 +122,31 @@ export default function App() {
           ? "This person already requested to chat. Review their request below."
           : "Request sent. You can chat once they accept.",
       );
+    }
+  }
+  async function removeConnection(direct: Direct) {
+    if (
+      !confirm(
+        `Remove ${direct.user.displayName} from your connections? This disconnects both accounts. A new request must be accepted before you can chat again. Your existing messages will be available if you reconnect.`,
+      )
+    )
+      return;
+    setRemovingConnection(direct.channelId);
+    try {
+      await api(`/dm/${direct.channelId}/connection`, "DELETE");
+      setDirects((items) =>
+        items.filter((item) => item.channelId !== direct.channelId),
+      );
+      setProfile(null);
+      if (activeRef.current === direct.channelId) {
+        setActive("");
+        setView("inbox");
+      }
+      await refresh();
+    } catch (error) {
+      errorHandler(error);
+    } finally {
+      setRemovingConnection("");
     }
   }
   useEffect(() => {
@@ -358,13 +389,6 @@ export default function App() {
         >
           <Compass size={23} />
         </button>
-        <button
-          className="rail-button rail-bottom"
-          aria-label="Your settings"
-          onClick={() => setModal("settings")}
-        >
-          <Settings size={21} />
-        </button>
       </aside>
       {navOpen && (
         <button
@@ -473,7 +497,11 @@ export default function App() {
             <Plus size={16} />
           </button>
         </div>
-        <button className="user-panel" onClick={() => setModal("settings")}>
+        <button
+          className="user-panel"
+          title="Profile and settings"
+          onClick={() => setModal("settings")}
+        >
           <Avatar user={me} size="small" online={connected} />
           <div>
             <strong>{me.displayName}</strong>
@@ -704,22 +732,34 @@ export default function App() {
                 {directs.length ? (
                   <div className="direct-grid">
                     {directs.map((d) => (
-                      <button
-                        className="direct-card"
-                        key={d.channelId}
-                        onClick={() => open(d.channelId)}
-                      >
-                        <Avatar user={d.user} />
-                        <div>
-                          <h3>{d.user.displayName}</h3>
-                          <p>@{d.user.username}</p>
-                        </div>
-                        {d.unread > 0 ? (
-                          <span className="badge">{d.unread}</span>
-                        ) : (
-                          <ArrowUpRight size={20} />
-                        )}
-                      </button>
+                      <article className="direct-connection" key={d.channelId}>
+                        <button
+                          className="direct-card"
+                          onClick={() => open(d.channelId)}
+                          aria-label={`Open conversation with ${d.user.displayName}`}
+                        >
+                          <Avatar user={d.user} />
+                          <div>
+                            <h3>{d.user.displayName}</h3>
+                            <p>@{d.user.username}</p>
+                          </div>
+                          {d.unread > 0 ? (
+                            <span className="badge">{d.unread}</span>
+                          ) : (
+                            <ArrowUpRight size={20} />
+                          )}
+                        </button>
+                        <button
+                          className="text-button remove-connection"
+                          aria-label={`Remove connection with ${d.user.displayName}`}
+                          disabled={!!removingConnection}
+                          onClick={() => void removeConnection(d)}
+                        >
+                          {removingConnection === d.channelId
+                            ? "Removing…"
+                            : "Remove connection"}
+                        </button>
+                      </article>
                     ))}
                   </div>
                 ) : (
@@ -758,89 +798,24 @@ export default function App() {
                     Join with an invite
                   </button>
                 </div>
-                {discoverLoading ? (
-                  <div className="card-grid">
-                    {[1, 2, 3].map((i) => (
-                      <div className="room-card skeleton-card" key={i} />
-                    ))}
-                  </div>
-                ) : discovery.length ? (
-                  <div className="card-grid">
-                    {discovery.map((r) => (
-                      <article className="room-card" key={r.id}>
-                        <div
-                          className="room-card-banner"
-                          style={
-                            { "--room-color": r.color } as React.CSSProperties
-                          }
-                        >
-                          <Picture
-                            className="discovery-icon"
-                            path={`/rooms/${r.id}/icon`}
-                            fallback={<Hash size={44} />}
-                          />
-                          <span>
-                            {r.memberCount}{" "}
-                            {r.memberCount === 1 ? "member" : "members"}
-                          </span>
-                        </div>
-                        <div className="room-card-body">
-                          <span className="eyebrow">PUBLIC ROOM</span>
-                          <h3>{r.name}</h3>
-                          <p>
-                            {r.description ||
-                              "A little space for good conversations."}
-                          </p>
-                          <button
-                            onClick={async () => {
-                              const joined = rooms.find((x) => x.id === r.id);
-                              if (joined) {
-                                open(joined.channelId);
-                                return;
-                              }
-                              try {
-                                const result = await api<{ channelId: string }>(
-                                  `/rooms/${r.id}/join`,
-                                  "POST",
-                                );
-                                refreshAndOpen(result.channelId);
-                              } catch (error) {
-                                errorHandler(error);
-                              }
-                            }}
-                          >
-                            {rooms.some((x) => x.id === r.id)
-                              ? "Open room"
-                              : "Join the conversation"}
-                            <ArrowUpRight size={18} />
-                          </button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <Empty
-                    icon={<Compass size={34} />}
-                    title={
-                      query
-                        ? "No rooms found."
-                        : "Be the beginning of something."
+                <DiscoverRooms
+                  rooms={rooms}
+                  discovery={discovery}
+                  query={query}
+                  loading={discoverLoading}
+                  onOpen={open}
+                  onJoin={async (room) => {
+                    try {
+                      const result = await api<{ channelId: string }>(
+                        `/rooms/${room.id}/join`,
+                        "POST",
+                      );
+                      refreshAndOpen(result.channelId);
+                    } catch (error) {
+                      errorHandler(error);
                     }
-                  >
-                    <p>
-                      {query
-                        ? "Try a different name, or create a space of your own."
-                        : "Create the first room and bring your favorite people together."}
-                    </p>
-                    <button
-                      className="primary"
-                      onClick={() => setModal("create")}
-                    >
-                      Create a room
-                      <Plus size={17} />
-                    </button>
-                  </Empty>
-                )}
+                  }}
+                />
                 <div className="discover-bottom">
                   <Sparkles size={18} />
                   <span>Every community starts with someone saying hello.</span>
@@ -930,7 +905,7 @@ export default function App() {
               </button>
               <button
                 className="danger full"
-                disabled={blockBusy}
+                disabled={blockBusy || deleteBusy}
                 onClick={async () => {
                   if (
                     !profileBlocked &&
@@ -969,6 +944,41 @@ export default function App() {
                     ? "Unblock user"
                     : "Block user"}
               </button>
+              {profileDirect && (
+                <button
+                  className="danger full"
+                  disabled={deleteBusy || blockBusy}
+                  onClick={async () => {
+                    if (
+                      !confirm(
+                        "Delete this conversation from your inbox? Message history and the other person's copy are kept. Opening the conversation again or a new message will restore it.",
+                      )
+                    )
+                      return;
+                    setDeleteBusy(true);
+                    try {
+                      await api("/dm/" + profileDirect.channelId, "DELETE");
+                      setDirects((items) =>
+                        items.filter(
+                          (item) => item.channelId !== profileDirect.channelId,
+                        ),
+                      );
+                      if (activeRef.current === profileDirect.channelId) {
+                        setActive("");
+                        setView("inbox");
+                      }
+                      setProfile(null);
+                      await refresh();
+                    } catch (error) {
+                      errorHandler(error);
+                    } finally {
+                      setDeleteBusy(false);
+                    }
+                  }}
+                >
+                  {deleteBusy ? "Deleting…" : "Delete conversation"}
+                </button>
+              )}
             </>
           )}
         </Modal>

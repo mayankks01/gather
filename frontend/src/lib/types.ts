@@ -8,6 +8,7 @@ export type User = {
   online?: boolean;
   mutedUntil?: number;
 };
+export type PersonSearchResult = User & { connected: boolean };
 export type Room = {
   id: string;
   channelId: string;
@@ -29,7 +30,7 @@ export type Direct = {
 export type DirectRequest = {
   requestId: string;
   channelId: string;
-  state: "Pending" | "Accepted" | "Declined" | "Cancelled";
+  state: "Pending" | "Accepted" | "Declined" | "Cancelled" | "Removed";
   incoming: boolean;
   createdAt: number;
   user: User;

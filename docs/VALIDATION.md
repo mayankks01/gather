@@ -4,7 +4,13 @@ Validated locally on Windows with .NET 10 and Node.js 22.
 
 - Backend: `dotnet build backend/Gather.Api --no-restore` succeeds.
 - Frontend: `npm run build` succeeds, including strict TypeScript checking. The initial production JavaScript bundle is approximately 126 KB gzip; the PRD’s 250 KB proposal is met by the current build output, excluding externally loaded fonts and user media.
-- Integration suite: `node --test tests/api.test.mjs` passes 28 checks against an isolated SQLite database on port 5081.
+- Integration suite: `node --test tests/api.test.mjs` passes 31 checks against an isolated SQLite database on port 5081.
+
+- Connection removal: verifies participant-only access, room rejection, repeat removal, live events for both participants, removal from both inboxes and connection search, denial of history/subscriptions/sending, stale acceptance rejection, new request IDs and recipient approval, and preserved history after reconnection.
+
+- People search: verified accepted connections appear before entering a query, case-insensitive name matching, separate new-person results, short queries showing connections only, hidden conversations remaining searchable, and blocking in either direction excluding a user.
+
+- Conversation deletion: verified per-account inbox removal, repeat deletion, room/outsider rejection, preservation of the other participant's inbox and history, explicit reopening, restoration after a new message, and deleting a blocked conversation without unblocking it. The additive upgrade creates only inbox visibility records and backs up SQLite first.
 - Browser: signed in using a test account, created a private room, and sent a message through the UI. Inspected the chat at 360×800 and 1440×900. The composer, navigation, and message content fit without visible overlap.
 - Authentication and chat are backed by the running .NET service; no sample-data mode is used.
 

@@ -37,6 +37,8 @@ public sealed class ChatService(GatherDb db, AccessService access, RealtimeEvent
             Contracts.Require(await db.Messages.AnyAsync(m => m.Id == input.ReplyToId && m.ChannelId == channel.Id && !m.Deleted), "The message you are replying to is unavailable.");
         var message = new Message { ChannelId = channel.Id, SenderId = userId, Content = input.Content.Trim(), ClientMessageId = input.ClientMessageId, Attachments = attachments };
         channel.LastActivity = message.CreatedAt; db.Messages.Add(message);
+        if (channel.RoomId == null)
+            db.HiddenDirects.RemoveRange(await db.HiddenDirects.Where(h => h.ChannelId == channel.Id).ToListAsync());
         if (input.ReplyToId != null) db.Replies.Add(new MessageReply { MessageId = message.Id, ParentMessageId = input.ReplyToId });
         try { await db.SaveChangesAsync(); }
         catch (DbUpdateException) { db.ChangeTracker.Clear(); var duplicate = await db.Messages.Include(m => m.Attachments).FirstOrDefaultAsync(m => m.SenderId == userId && m.ClientMessageId == input.ClientMessageId); if (duplicate == null || duplicate.ChannelId != channel.Id) throw; return await views.One(duplicate); }

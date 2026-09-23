@@ -3,6 +3,7 @@ import {
   Copy,
   Hash,
   Link2,
+  MessageCircle,
   Plus,
   Search,
   Shield,
@@ -11,7 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { api } from "../lib/api";
-import type { Invite, Room, User } from "../lib/types";
+import type { Invite, PersonSearchResult, Room, User } from "../lib/types";
 import { Avatar, Modal } from "./Common";
 import { PictureEditor } from "./Pictures";
 type Shared = { onClose: () => void; onError: (error: unknown) => void };
@@ -100,23 +101,24 @@ export function NewMessage({
   onStart,
 }: Shared & { me: User; onStart: (user: User) => Promise<void> }) {
   const [query, setQuery] = useState(""),
-    [results, setResults] = useState<User[]>([]),
+    [results, setResults] = useState<PersonSearchResult[]>([]),
     [sending, setSending] = useState(false),
     [loading, setLoading] = useState(false);
   useEffect(() => {
-    if (query.length < 3) {
-      setResults([]);
-      return;
-    }
     let active = true;
+    setResults([]);
     setLoading(true);
     const timeout = setTimeout(
       () =>
-        api<User[]>("/users/search?q=" + encodeURIComponent(query))
+        api<PersonSearchResult[]>(
+          "/users/search?q=" + encodeURIComponent(query.trim()),
+        )
           .then((users) => {
             if (active) setResults(users);
           })
-          .catch(onError)
+          .catch((error) => {
+            if (active) onError(error);
+          })
           .finally(() => {
             if (active) setLoading(false);
           }),
@@ -128,18 +130,18 @@ export function NewMessage({
     };
   }, [query]);
   return (
-    <Modal title="Send a message request." onClose={onClose}>
+    <Modal title="Find your people." onClose={onClose}>
       <p className="modal-description">
-        Find someone by username and send a request. You can chat once they
-        accept.
+        Open a conversation with a connection, or find someone new and send a
+        request.
       </p>
       <div className="search-field">
         <Search size={18} />
         <input
           autoFocus
-          aria-label="Search usernames"
-          placeholder="At least 3 characters…"
-          maxLength={20}
+          aria-label="Search people by name or username"
+          placeholder="Search names or usernames…"
+          maxLength={60}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -147,43 +149,66 @@ export function NewMessage({
       <div className="search-results">
         {loading ? (
           <p className="muted">Looking for your people…</p>
-        ) : results.length ? (
-          results
-            .filter((u) => u.id !== me.id)
-            .map((u) => (
-              <button
-                className="person-row"
-                key={u.id}
-                disabled={sending}
-                onClick={async () => {
-                  setSending(true);
-                  try {
-                    await onStart(u);
-                    onClose();
-                  } catch (error) {
-                    onError(error);
-                  } finally {
-                    setSending(false);
-                  }
-                }}
-              >
-                <Avatar user={u} />
-                <div>
-                  <strong>{u.displayName}</strong>
-                  <small>@{u.username}</small>
-                </div>
-                <UserPlus size={18} />
-                <span className="request-label">
-                  {sending ? "Sending…" : "Request"}
-                </span>
-              </button>
-            ))
         ) : (
-          <p className="muted">
-            {query.length >= 3
-              ? "No matching usernames found."
-              : "A good conversation is one search away."}
-          </p>
+          [true, false].map((connected) => (
+            <section
+              key={String(connected)}
+              aria-label={connected ? "Your connections" : "New people"}
+            >
+              <h3>{connected ? "Your connections" : "New people"}</h3>
+              {results
+                .filter((u) => u.id !== me.id && u.connected === connected)
+                .map((u) => (
+                  <button
+                    className="person-row"
+                    key={u.id}
+                    disabled={sending}
+                    onClick={async () => {
+                      setSending(true);
+                      try {
+                        await onStart(u);
+                        onClose();
+                      } catch (error) {
+                        onError(error);
+                      } finally {
+                        setSending(false);
+                      }
+                    }}
+                  >
+                    <Avatar user={u} />
+                    <div>
+                      <strong>{u.displayName}</strong>
+                      <small>@{u.username}</small>
+                    </div>
+                    {u.connected ? (
+                      <MessageCircle size={18} />
+                    ) : (
+                      <UserPlus size={18} />
+                    )}
+                    <span className="request-label">
+                      {sending
+                        ? "Opening…"
+                        : u.connected
+                          ? "Open chat"
+                          : "Request"}
+                    </span>
+                  </button>
+                ))}
+              {!results.some(
+                (u) => u.id !== me.id && u.connected === connected,
+              ) && (
+                <p className="muted">
+                  {connected
+                    ? query.trim()
+                      ? "No matching connections."
+                      : "Your accepted connections will appear here."
+                    : query.trim().length < 3
+                      ? "Type at least 3 characters to find new people."
+                      : "No new people match this search."}
+                </p>
+              )}
+            </section>
+          ))
         )}
       </div>
     </Modal>
@@ -655,7 +680,7 @@ export function UserSettings({
       api<User[]>("/blocks").then(setBlocks).catch(onError);
   }, [tab]);
   return (
-    <Modal title="Your Gather" onClose={onClose}>
+    <Modal title="Your Gather" onClose={onClose} className="settings-modal">
       <div className="tabs">
         {["profile", "appearance", "blocked"].map((t) => (
           <button
@@ -667,132 +692,136 @@ export function UserSettings({
           </button>
         ))}
       </div>
-      {tab === "profile" && (
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            try {
-              const user = await api<User>(
-                "/users/me",
-                "PATCH",
-                Object.fromEntries(new FormData(e.currentTarget)),
-              );
-              onUpdate(user);
-              onError(new Error("Profile saved."));
-            } catch (error) {
-              onError(error);
-            }
-          }}
-        >
-          <PictureEditor
-            kind="avatar"
-            id={me.id}
-            label={me.displayName}
-            onError={onError}
-          />
-          <label>
-            Display name
-            <input
-              name="displayName"
-              defaultValue={me.displayName}
-              required
-              maxLength={60}
+      <div className="settings-scroll">
+        {tab === "profile" && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                const user = await api<User>(
+                  "/users/me",
+                  "PATCH",
+                  Object.fromEntries(new FormData(e.currentTarget)),
+                );
+                onUpdate(user);
+                onError(new Error("Profile saved."));
+              } catch (error) {
+                onError(error);
+              }
+            }}
+          >
+            <PictureEditor
+              kind="avatar"
+              id={me.id}
+              label={me.displayName}
+              onError={onError}
             />
-          </label>
-          <label>
-            Username
-            <input
-              name="username"
-              defaultValue={me.username}
-              required
-              minLength={3}
-              maxLength={20}
-            />
-            <small>Can be changed once every 30 days.</small>
-          </label>
-          <label>
-            About you
-            <textarea
-              name="bio"
-              defaultValue={me.bio}
-              maxLength={300}
-              placeholder="A little about you…"
-            />
-          </label>
-          <button className="primary full">Save profile</button>
-          <div className="verification">
-            {me.emailVerified ? (
-              "Email verified"
-            ) : (
-              <>
-                <span>Email verification pending.</span>
+            <div className="profile-fields">
+              <label>
+                Display name
+                <input
+                  name="displayName"
+                  defaultValue={me.displayName}
+                  required
+                  maxLength={60}
+                />
+              </label>
+              <label>
+                Username
+                <input
+                  name="username"
+                  defaultValue={me.username}
+                  required
+                  minLength={3}
+                  maxLength={20}
+                />
+                <small>Can be changed once every 30 days.</small>
+              </label>
+            </div>
+            <label>
+              About you
+              <textarea
+                name="bio"
+                defaultValue={me.bio}
+                maxLength={300}
+                placeholder="A little about you…"
+              />
+            </label>
+            <button className="primary full">Save profile</button>
+            <div className="verification">
+              {me.emailVerified ? (
+                "Email verified"
+              ) : (
+                <>
+                  <span>Email verification pending.</span>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() =>
+                      api("/auth/resend-verification", "POST")
+                        .then(() =>
+                          onError(new Error("Verification link requested.")),
+                        )
+                        .catch(onError)
+                    }
+                  >
+                    Resend link
+                  </button>
+                </>
+              )}
+            </div>
+          </form>
+        )}
+        {tab === "appearance" && (
+          <div className="theme-options">
+            <button
+              className={!dark ? "selected" : ""}
+              onClick={() => setDark(false)}
+            >
+              <div className="theme-preview light" />
+              Light
+            </button>
+            <button
+              className={dark ? "selected" : ""}
+              onClick={() => setDark(true)}
+            >
+              <div className="theme-preview dark" />
+              Dark
+            </button>
+          </div>
+        )}
+        {tab === "blocked" && (
+          <div className="manage-list">
+            {!blocks.length && (
+              <p className="muted">You haven’t blocked anyone.</p>
+            )}
+            {blocks.map((u) => (
+              <div className="person-row" key={u.id}>
+                <Avatar user={u} />
+                <div>
+                  <strong>{u.displayName}</strong>
+                  <small>@{u.username}</small>
+                </div>
                 <button
-                  type="button"
                   className="text-button"
                   onClick={() =>
-                    api("/auth/resend-verification", "POST")
+                    api("/blocks/" + u.id, "DELETE")
                       .then(() =>
-                        onError(new Error("Verification link requested.")),
+                        setBlocks((previous) =>
+                          previous.filter((b) => b.id !== u.id),
+                        ),
                       )
                       .catch(onError)
                   }
                 >
-                  Resend link
+                  Unblock
                 </button>
-              </>
-            )}
-          </div>
-        </form>
-      )}
-      {tab === "appearance" && (
-        <div className="theme-options">
-          <button
-            className={!dark ? "selected" : ""}
-            onClick={() => setDark(false)}
-          >
-            <div className="theme-preview light" />
-            Light
-          </button>
-          <button
-            className={dark ? "selected" : ""}
-            onClick={() => setDark(true)}
-          >
-            <div className="theme-preview dark" />
-            Dark
-          </button>
-        </div>
-      )}
-      {tab === "blocked" && (
-        <div className="manage-list">
-          {!blocks.length && (
-            <p className="muted">You haven’t blocked anyone.</p>
-          )}
-          {blocks.map((u) => (
-            <div className="person-row" key={u.id}>
-              <Avatar user={u} />
-              <div>
-                <strong>{u.displayName}</strong>
-                <small>@{u.username}</small>
               </div>
-              <button
-                className="text-button"
-                onClick={() =>
-                  api("/blocks/" + u.id, "DELETE")
-                    .then(() =>
-                      setBlocks((previous) =>
-                        previous.filter((b) => b.id !== u.id),
-                      ),
-                    )
-                    .catch(onError)
-                }
-              >
-                Unblock
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      <button className="secondary full" onClick={onLogout}>
+            ))}
+          </div>
+        )}
+      </div>
+      <button className="secondary full settings-signout" onClick={onLogout}>
         Sign out
       </button>
     </Modal>

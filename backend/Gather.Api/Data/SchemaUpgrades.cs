@@ -13,6 +13,30 @@ public static class SchemaUpgrades
         await ChatTools(db);
         await Pictures(db);
         await DirectRequests(db);
+        await HiddenDirects(db);
+    }
+    private static async Task HiddenDirects(GatherDb db)
+    {
+        const string version = "20260922-hidden-directs";
+        if (await db.SchemaVersions.AnyAsync(x => x.Version == version)) return;
+        if (db.Database.GetDbConnection() is SqliteConnection source && File.Exists(source.DataSource))
+        {
+            var backups = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(source.DataSource))!, "backups");
+            Directory.CreateDirectory(backups);
+            await source.OpenAsync();
+            await using var backup = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(backups, $"before-hidden-directs-{DateTime.UtcNow:yyyyMMddHHmmssfff}.db") }.ToString());
+            await backup.OpenAsync(); source.BackupDatabase(backup); await source.CloseAsync();
+        }
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "HiddenDirects" (
+                "UserId" TEXT NOT NULL REFERENCES "Users" ("Id") ON DELETE CASCADE,
+                "ChannelId" TEXT NOT NULL REFERENCES "Channels" ("Id") ON DELETE CASCADE,
+                PRIMARY KEY ("UserId", "ChannelId"));
+            CREATE INDEX IF NOT EXISTS "IX_HiddenDirects_ChannelId" ON "HiddenDirects" ("ChannelId");
+            """);
+        db.SchemaVersions.Add(new SchemaVersion { Version = version });
+        await db.SaveChangesAsync(); await transaction.CommitAsync();
     }
     private static async Task DirectRequests(GatherDb db)
     {

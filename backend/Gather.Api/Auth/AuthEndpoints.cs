@@ -25,6 +25,20 @@ public static class AuthEndpoints
             if (name != user.Username) { Contracts.Require(user.UsernameChangedAt == 0 || user.UsernameChangedAt < Domain.Clock.Now - (long)TimeSpan.FromDays(30).TotalMilliseconds, "Usernames can be changed once every 30 days."); Contracts.Require(!await db.Users.AnyAsync(u => u.Username == name), "That username is unavailable."); user.Username = name; user.UsernameChangedAt = Domain.Clock.Now; }
             user.DisplayName = input.DisplayName.Trim(); user.Bio = input.Bio.Trim(); await db.SaveChangesAsync(); return Contracts.Profile(user);
         });
-        users.MapGet("/search", async (string q, ClaimsPrincipal p, GatherDb db) => { Contracts.Require(q.Length is >= 3 and <= 20, "Enter at least 3 characters."); var prefix = AuthService.Normalize(q); var id = p.UserId(); return (await db.Users.Where(u => u.Id != id && u.Username.StartsWith(prefix) && !db.Blocks.Any(b => (b.UserId == id && b.TargetId == u.Id) || (b.UserId == u.Id && b.TargetId == id))).Take(10).ToListAsync()).Select(Contracts.Profile); }).RequireRateLimiting("search");
+        users.MapGet("/search", async (string? q, ClaimsPrincipal p, GatherDb db) =>
+        {
+            var term = AuthService.Normalize(q ?? ""); var id = p.UserId();
+            Contracts.Require(term.Length <= 60, "Use up to 60 characters.");
+            var matches = db.Users.Where(u => u.Id != id
+                && (term == "" || u.Username.Contains(term) || u.DisplayName.ToLower().Contains(term))
+                && !db.Blocks.Any(b => (b.UserId == id && b.TargetId == u.Id) || (b.UserId == u.Id && b.TargetId == id)))
+                .Select(u => new { u.Id, u.Username, u.DisplayName, u.Bio,
+                    connected = db.Channels.Any(c => ((c.UserLow == id && c.UserHigh == u.Id) || (c.UserHigh == id && c.UserLow == u.Id))
+                        && db.DmRequests.Any(r => r.ChannelId == c.Id && r.State == "Accepted")) });
+            var results = await matches.Where(u => u.connected).OrderBy(u => u.DisplayName).ThenBy(u => u.Id).Take(20).ToListAsync();
+            if (term.Length >= 3)
+                results.AddRange(await matches.Where(u => !u.connected).OrderBy(u => u.DisplayName).ThenBy(u => u.Id).Take(20).ToListAsync());
+            return results;
+        }).RequireRateLimiting("search");
     }
 }

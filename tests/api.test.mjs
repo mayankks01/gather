@@ -357,6 +357,222 @@ test("only the recipient can accept; accepted requests unlock real-time chat", a
   );
 });
 
+test("people search separates accepted connections from new people and respects blocking", async () => {
+  const search = async (user, term = "") =>
+    (await request("/users/search?q=" + encodeURIComponent(term), { user }))
+      .result;
+  const initial = await search(owner);
+  assert.ok(initial.some((u) => u.id === member.user.id && u.connected));
+  assert.ok(initial.every((u) => u.connected && u.id !== owner.user.id));
+  const byName = await search(member, "OWNER TEST");
+  assert.ok(byName.some((u) => u.id === owner.user.id && u.connected));
+  assert.ok(
+    (await search(owner, outsider.user.username)).some(
+      (u) => u.id === outsider.user.id && !u.connected,
+    ),
+  );
+  assert.ok((await search(owner, "m")).every((u) => u.connected));
+  await request("/dm/" + dmRequest.channelId, {
+    user: owner,
+    method: "DELETE",
+  });
+  assert.ok(
+    (await search(owner)).some((u) => u.id === member.user.id && u.connected),
+  );
+  await request("/dm/" + member.user.username, { user: owner, method: "POST" });
+  await request("/blocks/" + member.user.id, { user: owner, method: "POST" });
+  assert.ok(
+    !(await search(owner, member.user.username)).some(
+      (u) => u.id === member.user.id,
+    ),
+  );
+  assert.ok(
+    !(await search(member, owner.user.username)).some(
+      (u) => u.id === owner.user.id,
+    ),
+  );
+  await request("/blocks/" + member.user.id, { user: owner, method: "DELETE" });
+});
+
+test("deleting a DM hides only your copy, supports reopening, and restores on new messages", async () => {
+  const id = dmRequest.channelId;
+  const inboxHas = async (user) =>
+    (await request("/dm", { user })).result.some((d) => d.channelId === id);
+  assert.equal(
+    (await request("/dm/" + id, { user: outsider, method: "DELETE" })).status,
+    404,
+  );
+  assert.equal(
+    (await request("/dm/" + channel, { user: owner, method: "DELETE" })).status,
+    404,
+  );
+  const before = (await request(`/channels/${id}/messages`, { user: member }))
+    .result.messages;
+  for (let i = 0; i < 2; i++)
+    assert.equal(
+      (await request("/dm/" + id, { user: owner, method: "DELETE" })).status,
+      204,
+    );
+  assert.equal(await inboxHas(owner), false);
+  assert.equal(await inboxHas(member), true);
+  assert.deepEqual(
+    (await request(`/channels/${id}/messages`, { user: member })).result
+      .messages,
+    before,
+  );
+  assert.equal(
+    (
+      await request("/dm/" + member.user.username, {
+        user: owner,
+        method: "POST",
+      })
+    ).result.state,
+    "Accepted",
+  );
+  assert.equal(await inboxHas(owner), true);
+  await request("/dm/" + id, { user: owner, method: "DELETE" });
+  await connections[1].invoke("SendMessage", {
+    channelId: id,
+    content: "Restores hidden conversation",
+    clientMessageId: crypto.randomUUID(),
+    attachmentIds: [],
+  });
+  assert.equal(await inboxHas(owner), true);
+  await request("/blocks/" + member.user.id, { user: owner, method: "POST" });
+  assert.equal(
+    (await request("/dm/" + id, { user: owner, method: "DELETE" })).status,
+    204,
+  );
+  assert.equal(await inboxHas(owner), false);
+  await request("/blocks/" + member.user.id, { user: owner, method: "DELETE" });
+  assert.equal(await inboxHas(owner), false);
+  await request("/dm/" + member.user.username, { user: owner, method: "POST" });
+});
+
+test("removing a connection disconnects both users and requires a fresh accepted request", async () => {
+  const id = dmRequest.channelId;
+  const path = `/dm/${id}/connection`;
+  const history = (await request(`/channels/${id}/messages`, { user: owner }))
+    .result.messages;
+  assert.equal(
+    (await request(path, { user: outsider, method: "DELETE" })).status,
+    404,
+  );
+  assert.equal(
+    (
+      await request(`/dm/${channel}/connection`, {
+        user: owner,
+        method: "DELETE",
+      })
+    ).status,
+    404,
+  );
+  const notices = [connections[0], connections[1]].map(
+    (hub) =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          hub.off("DirectRequestsChanged", handler);
+          reject(new Error("Missing disconnect event"));
+        }, 5000);
+        const handler = () => {
+          clearTimeout(timer);
+          hub.off("DirectRequestsChanged", handler);
+          resolve();
+        };
+        hub.on("DirectRequestsChanged", handler);
+      }),
+  );
+  assert.equal(
+    (await request(path, { user: owner, method: "DELETE" })).status,
+    204,
+  );
+  await Promise.all(notices);
+  assert.equal(
+    (await request(path, { user: owner, method: "DELETE" })).status,
+    204,
+  );
+  for (const user of [owner, member]) {
+    assert.ok(
+      !(await request("/dm", { user })).result.some((d) => d.channelId === id),
+    );
+    assert.equal(
+      (await request(`/channels/${id}/messages`, { user })).status,
+      403,
+    );
+    assert.ok(
+      !(await request("/users/search?q=", { user })).result.some(
+        (u) => u.id === (user === owner ? member.user.id : owner.user.id),
+      ),
+    );
+  }
+  for (const hub of [connections[0], connections[1]]) {
+    await assert.rejects(() => hub.invoke("SubscribeChannel", id));
+    await assert.rejects(() =>
+      hub.invoke("SendMessage", {
+        channelId: id,
+        content: "Not connected",
+        clientMessageId: crypto.randomUUID(),
+        attachmentIds: [],
+      }),
+    );
+  }
+  assert.equal(
+    (
+      await request(`/dm/requests/${dmRequest.requestId}/accept`, {
+        user: member,
+        method: "POST",
+      })
+    ).status,
+    409,
+  );
+  const fresh = (
+    await request("/dm/" + owner.user.username, {
+      user: member,
+      method: "POST",
+    })
+  ).result;
+  assert.equal(fresh.state, "Pending");
+  assert.equal(fresh.channelId, id);
+  assert.notEqual(fresh.requestId, dmRequest.requestId);
+  assert.equal(
+    (await request(path, { user: owner, method: "DELETE" })).status,
+    409,
+  );
+  assert.equal(
+    (
+      await request("/dm/" + member.user.username, {
+        user: owner,
+        method: "POST",
+      })
+    ).result.state,
+    "Pending",
+  );
+  assert.equal(
+    (
+      await request(`/dm/requests/${fresh.requestId}/accept`, {
+        user: member,
+        method: "POST",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(`/dm/requests/${fresh.requestId}/accept`, {
+        user: owner,
+        method: "POST",
+      })
+    ).status,
+    200,
+  );
+  assert.deepEqual(
+    (await request(`/channels/${id}/messages`, { user: owner })).result
+      .messages,
+    history,
+  );
+  dmRequest = fresh;
+});
+
 test("decline, cancellation and stale requests cannot bypass recipient approval", async () => {
   const first = (
     await request("/dm/" + outsider.user.username, {

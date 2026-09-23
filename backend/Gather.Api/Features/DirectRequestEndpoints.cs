@@ -24,6 +24,34 @@ public static class DirectRequestEndpoints
         });
         api.MapPost("/{username}", Start).RequireRateLimiting("dm");
         api.MapPost("/requests/{requestId}/{action}", Decide);
+        api.MapDelete("/{channelId}/connection", async (string channelId, ClaimsPrincipal user, GatherDb db, RealtimeEvents events) =>
+        {
+            var me = user.UserId();
+            var channel = await db.Channels.AsNoTracking().FirstOrDefaultAsync(c => c.Id == channelId);
+            Contracts.Require(channel != null && channel.RoomId == null && (channel.UserLow == me || channel.UserHigh == me), "Connection not found.", 404);
+            var request = await db.DmRequests.AsNoTracking().SingleAsync(r => r.ChannelId == channelId);
+            if (request.State == "Removed") return Results.NoContent();
+            Contracts.Require(request.State == "Accepted", "This is not an active connection.", 409);
+            await using var transaction = await db.Database.BeginTransactionAsync();
+            var now = Clock.Now;
+            var changed = await db.DmRequests.Where(r => r.ChannelId == channelId && r.RequestId == request.RequestId && r.State == "Accepted")
+                .ExecuteUpdateAsync(set => set.SetProperty(r => r.State, "Removed").SetProperty(r => r.UpdatedAt, now));
+            Contracts.Require(changed == 1, "This connection has changed. Refresh and try again.", 409);
+            await db.HiddenDirects.Where(h => h.ChannelId == channelId).ExecuteDeleteAsync();
+            await transaction.CommitAsync();
+            await events.Notify([channel!.UserLow!, channel.UserHigh!], "DirectRequestsChanged");
+            return Results.NoContent();
+        });
+        api.MapDelete("/{channelId}", async (string channelId, ClaimsPrincipal user, GatherDb db, RealtimeEvents events) =>
+        {
+            var me = user.UserId();
+            var channel = await db.Channels.AsNoTracking().FirstOrDefaultAsync(c => c.Id == channelId);
+            Contracts.Require(channel != null && channel.RoomId == null && (channel.UserLow == me || channel.UserHigh == me), "Conversation not found.", 404);
+            Contracts.Require(await db.DmRequests.AnyAsync(r => r.ChannelId == channelId && r.State == "Accepted"), "Handle the pending request instead.", 400);
+            await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO \"HiddenDirects\" (\"UserId\", \"ChannelId\") VALUES ({me}, {channelId}) ON CONFLICT (\"UserId\", \"ChannelId\") DO NOTHING");
+            await events.Notify([me], "RoomsChanged");
+            return Results.NoContent();
+        });
     }
 
     private static async Task<object> Start(string username, ClaimsPrincipal principal, GatherDb db, RealtimeEvents events)
@@ -50,10 +78,10 @@ public static class DirectRequestEndpoints
             }
         }
         request = await db.DmRequests.AsNoTracking().SingleAsync(r => r.ChannelId == channel.Id);
-        if (request.State is "Declined" or "Cancelled")
+        if (request.State is "Declined" or "Cancelled" or "Removed")
         {
             // Closed requests cannot be immediately resent to someone who declined.
-            var wait = request.State == "Declined" ? 7 * 86400000L : 60000L;
+            var wait = request.State == "Declined" ? 7 * 86400000L : request.State == "Cancelled" ? 60000L : 0L;
             Contracts.Require(request.RequesterId != me || Clock.Now - request.UpdatedAt >= wait,
                 request.State == "Declined" ? "This request was closed. You can request again after 7 days." : "Wait a minute before sending another request.", 409);
             var nextId = Guid.NewGuid().ToString(); var now = Clock.Now;
@@ -63,6 +91,8 @@ public static class DirectRequestEndpoints
             changed = updated > 0;
             request = await db.DmRequests.AsNoTracking().SingleAsync(r => r.ChannelId == channel.Id);
         }
+        if (request.State == "Accepted" && await db.HiddenDirects.Where(h => h.UserId == me && h.ChannelId == channel.Id).ExecuteDeleteAsync() > 0)
+            await events.Notify([me], "RoomsChanged");
         if (changed) await events.Notify(ids, "DirectRequestsChanged");
         return new { channelId = channel.Id, request.RequestId, request.State, incoming = request.RequesterId != me, user = Contracts.Profile(other) };
     }
