@@ -55,5 +55,5 @@ export const config = {
   framework: "vite",
   buildCommand: "npm run build",
   outputDirectory: "dist",
-  routes: [apiRoute, spaRoute],
+  routes: [apiRoute, { handle: "filesystem" }, spaRoute],
 };

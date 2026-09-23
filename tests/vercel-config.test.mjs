@@ -26,7 +26,7 @@ test("Vercel proxy targets the API and references the secret without embedding i
   process.env.GATHER_PROXY_SECRET = "test-only-secret-at-least-32-characters";
   const { config } = await load();
   validateStaticFields(config);
-  const [api, spa] = config.routes;
+  const [api, filesystem, spa] = config.routes;
   assert.equal(api.dest, "https://api.example.test/api/$1");
   assert.equal(
     "/api/v1/auth/refresh".replace(new RegExp(api.src), api.dest),
@@ -38,6 +38,7 @@ test("Vercel proxy targets the API and references the secret without embedding i
   assert.equal(proxyTransform.target.key, "x-gather-proxy-secret");
   assert.deepEqual(proxyTransform.env, ["GATHER_PROXY_SECRET"]);
   assert.ok(!JSON.stringify(config).includes(process.env.GATHER_PROXY_SECRET));
+  assert.deepEqual(filesystem, { handle: "filesystem" });
   assert.equal(spa.dest, "/index.html");
   const csp = api.transforms.find(
     (transform) => transform.target?.key === "Content-Security-Policy",
