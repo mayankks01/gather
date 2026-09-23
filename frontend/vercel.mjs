@@ -43,9 +43,7 @@ export const config = {
     routes.rewrite("/(.*)", "/index.html"),
   ],
   headers: [
-    {
-      source: "/(.*)",
-      headers: [
+    routes.header("/(.*)", [
         { key: "X-Content-Type-Options", value: "nosniff" },
         { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         { key: "X-Frame-Options", value: "DENY" },
@@ -57,11 +55,9 @@ export const config = {
           key: "Content-Security-Policy",
           value: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ${backend} ${socket}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'`,
         },
-      ],
-    },
-    {
-      source: "/api/(.*)",
-      headers: [{ key: "Cache-Control", value: "private, no-store" }],
-    },
+      ]),
+    routes.header("/api/(.*)", [
+      { key: "Cache-Control", value: "private, no-store" },
+    ]),
   ],
 };
